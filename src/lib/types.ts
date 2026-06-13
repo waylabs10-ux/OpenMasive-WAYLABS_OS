@@ -22,7 +22,7 @@ export interface Contact {
   name?: string;
   phone: string;
   /** Campos adicionales del contacto utilizables como variables {campo}. */
-  [key: string]: string | undefined;
+  [key: string]: unknown;
 }
 
 export interface Message {

@@ -72,13 +72,17 @@ export function SendQueue({
   const { config, setConfig, contacts, messages } = useCampaignStore();
 
   const status = campaign?.status ?? "idle";
-  const counters = campaign?.counters ?? {
-    total: 0,
-    sent: 0,
-    skipped: 0,
-    failed: 0,
-    protected: 0,
-  };
+  const counters = useMemo(
+    () =>
+      campaign?.counters ?? {
+        total: 0,
+        sent: 0,
+        skipped: 0,
+        failed: 0,
+        protected: 0,
+      },
+    [campaign]
+  );
 
   const progress = useMemo(() => {
     const total = counters.total || 0;
