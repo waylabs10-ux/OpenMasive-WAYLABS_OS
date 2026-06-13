@@ -13,10 +13,6 @@
 
 const { registerBlockedNumber } = require("./store");
 
-const IS_MOCK =
-  (process.env.WA_MOCK ?? "true").toLowerCase() === "true" ||
-  !canRequireOpenWa();
-
 function canRequireOpenWa() {
   try {
     require.resolve("@openwa/wa-automate");
@@ -24,6 +20,26 @@ function canRequireOpenWa() {
   } catch {
     return false;
   }
+}
+
+// Intención del usuario (variable de entorno) vs. capacidad real (OpenWA instalado).
+const WANT_MOCK = (process.env.WA_MOCK ?? "true").toLowerCase() === "true";
+const HAS_OPENWA = canRequireOpenWa();
+
+// Solo se usa OpenWA real cuando el usuario lo pide (WA_MOCK=false) Y está instalado.
+const IS_MOCK = WANT_MOCK || !HAS_OPENWA;
+
+// Diagnóstico claro al arrancar: explica POR QUÉ se está en cada modo.
+if (WANT_MOCK) {
+  console.log("[wa] Modo SIMULADO activo (WA_MOCK=true).");
+} else if (!HAS_OPENWA) {
+  console.warn(
+    "[wa] ⚠️  WA_MOCK=false pero '@openwa/wa-automate' NO está instalado: " +
+      "se usará el modo SIMULADO como respaldo.\n" +
+      "      Instálalo con:  npm install --workspace wa-server @openwa/wa-automate"
+  );
+} else {
+  console.log("[wa] Modo REAL activo (OpenWA). Escanea el QR para conectar.");
 }
 
 // ─────────────────────────── Estado del módulo ────────────────────────────

@@ -39,7 +39,10 @@ deduplicación inteligente de envíos y protección anti-bloqueo del número.
 npm install
 
 # 2. Instalar dependencias del servidor WA
+#    Por defecto incluye @openwa/wa-automate (necesario para el modo REAL).
 npm install --workspace wa-server
+#    Si lo instalaste con --no-optional o quieres asegurarte de tener OpenWA:
+npm install --workspace wa-server @openwa/wa-automate
 
 # 3. Configurar variables de entorno
 cp .env.example .env
@@ -60,6 +63,20 @@ Reproduce el flujo completo sin un WhatsApp real: genera un QR ficticio, simula
 la conexión tras unos segundos, envía mensajes con delays y, ocasionalmente,
 simula un bloqueo para que puedas ver la protección en acción. Perfecto para
 desarrollo y demos.
+
+### Modo real (`WA_MOCK=false`)
+
+> **Importante:** el modo real requiere que `@openwa/wa-automate` esté instalado.
+> Si pones `WA_MOCK=false` pero OpenWA **no** está instalado, el servidor seguirá
+> en modo simulado como respaldo y lo avisará en consola:
+>
+> ```
+> [wa] ⚠️  WA_MOCK=false pero '@openwa/wa-automate' NO está instalado...
+> ```
+>
+> Solución: `npm install --workspace wa-server @openwa/wa-automate` y reinicia el
+> `wa-server`. Necesitas Chromium disponible (OpenWA lo descarga o usa
+> `PUPPETEER_EXECUTABLE_PATH`).
 
 ## 🧪 Flujo de uso
 
