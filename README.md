@@ -81,10 +81,31 @@ desarrollo y demos.
 ## 🧪 Flujo de uso
 
 1. Inicia sesión y escanea el QR (o espera la conexión en modo mock).
-2. Carga el JSON de **contactos** (`samples/contacts.example.json`).
-3. Carga el JSON de **mensajes** (`samples/messages.example.json`).
-4. Ajusta la configuración anti-bloqueo (delays, lote, selección de mensaje).
+2. Carga los **contactos** desde un **CSV** (`samples/contacts.example.csv`) o
+   un JSON (`samples/contacts.example.json`). El CSV admite columnas
+   `nombre,telefono` (con o sin cabecera; también detecta `phone`, `numero`,
+   `celular`, etc.). Los números repetidos se omiten automáticamente.
+3. Escribe el **mensaje** directamente en el campo de texto. Puedes usar
+   variables como `{name}`, `{phone}` o cualquier columna del CSV, con una vista
+   previa en vivo.
+4. Ajusta la configuración anti-bloqueo (delays, tamaño de lote) y la estrategia
+   para **evitar reenvíos** (por número = nunca se contacta dos veces al mismo
+   teléfono).
 5. Pulsa **Iniciar campaña** y sigue el progreso en tiempo real.
+
+### 📇 Formato del CSV de contactos
+
+```csv
+nombre,telefono
+Juan Pérez,573001234567
+María López,573009876543
+```
+
+- El separador puede ser coma, punto y coma, tabulador o `|` (se autodetecta).
+- La cabecera es opcional: sin ella, la primera columna es el teléfono y la
+  segunda (si existe) el nombre.
+- Los teléfonos se normalizan a solo dígitos; las filas inválidas se descartan
+  y se informa cuántas se omitieron.
 
 ## 🩺 Solución de problemas
 
@@ -144,7 +165,9 @@ Tras cambiar el `.env`, reinicia el `wa-server`.
 
 ## 🛡️ Reglas de negocio (sin excepciones)
 
-1. Nunca se envía el mismo `phone + messageId` dos veces (deduplicación).
+1. Deduplicación: por defecto **nunca se contacta dos veces al mismo número**
+   (estrategia `por número`). Opcionalmente se puede deduplicar por
+   `phone + messageId` (estrategia `por mensaje`).
 2. Nunca se usa un número bloqueado para nuevos envíos.
 3. Nunca se contacta a un contacto ya alcanzado por un número bloqueado.
 4. Delays siempre aleatorios, nunca intervalos fijos.
