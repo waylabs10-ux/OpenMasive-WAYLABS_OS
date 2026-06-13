@@ -1,0 +1,42 @@
+# Despliegue opcional con Docker Compose.
+# Levanta dos servicios: el frontend Next.js (3000) y el servidor OpenWA (3001).
+services:
+  wa-server:
+    build:
+      context: ./wa-server
+      dockerfile: Dockerfile
+    container_name: wa-bulk-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - WA_SERVER_PORT=3001
+      - WA_SESSION_ID=${WA_SESSION_ID:-wa-bulk-sender}
+      - WA_MOCK=${WA_MOCK:-false}
+      - WA_MIN_DELAY_MS=${WA_MIN_DELAY_MS:-8000}
+      - WA_MAX_DELAY_MS=${WA_MAX_DELAY_MS:-25000}
+      - WA_BATCH_SIZE=${WA_BATCH_SIZE:-30}
+      - WA_BATCH_PAUSE_MS=${WA_BATCH_PAUSE_MS:-300000}
+      - WA_MAX_DAILY_MESSAGES=${WA_MAX_DAILY_MESSAGES:-150}
+    volumes:
+      - wa-data:/app/data
+      - wa-session:/app/session
+    # OpenWA usa Chromium headless; estos flags evitan problemas en contenedores.
+    shm_size: "1gb"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wa-bulk-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - WA_SERVER_URL=http://wa-server:3001
+    depends_on:
+      - wa-server
+
+volumes:
+  wa-data:
+  wa-session:
