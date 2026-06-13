@@ -117,5 +117,6 @@ function mapConfig(config: Record<string, unknown> | undefined) {
     batchSize: config.batchSize,
     messageSelection: config.messageSelection,
     selectedMessageId: config.selectedMessageId,
+    dedupeBy: config.dedupeBy,
   };
 }

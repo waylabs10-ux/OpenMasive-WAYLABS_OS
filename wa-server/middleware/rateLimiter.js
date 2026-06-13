@@ -18,6 +18,7 @@ const ANTI_BLOCK_CONFIG = {
   typingSimulation:
     (process.env.WA_TYPING_SIMULATION ?? "true").toLowerCase() !== "false",
   typingDurationMs: [1500, 4000], // duración aleatoria "escribiendo..."
+  dedupeBy: "phone", // "phone": nunca repetir número | "message": phone+messageId
 };
 
 /** Entero aleatorio inclusivo en [min, max]. */

@@ -30,8 +30,9 @@ const DEFAULT_CONFIG: CampaignConfig = {
   minDelay: 8000,
   maxDelay: 25000,
   batchSize: 30,
-  messageSelection: "random",
+  messageSelection: "single",
   selectedMessageId: undefined,
+  dedupeBy: "phone",
 };
 
 export const useCampaignStore = create<CampaignState>()(

@@ -1,4 +1,10 @@
-import type { Contact, Message, SentRecord, BlockedNumber } from "./types";
+import type {
+  Contact,
+  Message,
+  SentRecord,
+  BlockedNumber,
+  DedupeBy,
+} from "./types";
 
 /**
  * Lógica de deduplicación del lado del cliente (para previews y estadísticas).
@@ -42,10 +48,12 @@ export function computeDedupStats(
   sentLog: SentRecord[],
   blocked: BlockedNumber[],
   messageSelection: "random" | "sequential" | "single" = "random",
-  selectedMessageId?: string
+  selectedMessageId?: string,
+  dedupeBy: DedupeBy = "phone"
 ): DedupStats {
   const protectedSet = buildProtectedSet(blocked);
   const sentSet = new Set(sentLog.map((r) => sentKey(r.phone, r.messageId)));
+  const sentPhones = new Set(sentLog.map((r) => r.phone));
 
   let toSend = 0;
   let duplicates = 0;
@@ -64,7 +72,13 @@ export function computeDedupStats(
       protectedSkips += 1;
       return;
     }
-    if (sentSet.has(sentKey(contact.phone, message.id))) {
+
+    const alreadySent =
+      dedupeBy === "phone"
+        ? sentPhones.has(contact.phone)
+        : sentSet.has(sentKey(contact.phone, message.id));
+
+    if (alreadySent) {
       duplicates += 1;
       return;
     }
