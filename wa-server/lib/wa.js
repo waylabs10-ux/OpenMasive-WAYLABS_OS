@@ -136,15 +136,42 @@ async function startReal() {
     state.status = "qr_ready";
   });
 
+  // Ruta a un Chrome/Chromium del sistema (recomendado en Linux/servidores).
+  const executablePath =
+    process.env.WA_CHROME_PATH ||
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    undefined;
+
+  // Argumentos imprescindibles para que Chromium arranque en Linux/contenedores
+  // (el sandbox suele provocar el "Waiting failed: 30000ms exceeded").
+  const browserArgs = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-first-run",
+    "--no-default-browser-check",
+  ];
+
   waClient = await create({
     sessionId: process.env.WA_SESSION_ID || "wa-bulk-sender",
     multiDevice: true,
-    authTimeout: 60,
+    // 0 = sin límite de tiempo para autenticarse / escanear el QR.
+    authTimeout: Number(process.env.WA_AUTH_TIMEOUT) || 0,
     blockCrashLogs: true,
     disableSpins: true,
-    headless: true,
+    headless: (process.env.WA_HEADLESS ?? "true").toLowerCase() !== "false",
     logConsole: false,
     qrTimeout: 0,
+    // Usa el Chrome estable del sistema en lugar del Chromium empaquetado.
+    useChrome: (process.env.WA_USE_CHROME ?? "true").toLowerCase() !== "false",
+    executablePath,
+    browserArgs,
+    chromiumArgs: browserArgs,
+    killProcessOnBrowserClose: true,
+    cacheEnabled: false,
+    // Espera más tiempo a que cargue WhatsApp Web en equipos/redes lentas.
+    waitForRipeDatabase: false,
     licenseKey: process.env.OPENWA_LICENSE_KEY || undefined,
     qrCallback: (qr) => {
       state.qr = qr;

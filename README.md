@@ -115,6 +115,33 @@ El frontend (3000) está bien, pero el `wa-server` (3001) no responde. Inícialo
 con `npm run wa-server:dev` y confirma que imprime
 `🟢 wa-server escuchando en http://localhost:3001`.
 
+### `TimeoutError: Waiting failed: 30000ms exceeded` (OpenWA / Puppeteer)
+
+OpenWA no consiguió arrancar el navegador. Causas y solución (en orden):
+
+1. **Sesión corrupta:** borra la carpeta de sesión y reintenta:
+   ```bash
+   rm -rf wa-server/_IGNORE_wa-bulk-sender wa-server/*.data.json
+   ```
+2. **Sandbox/dependencias de Chromium (Linux):** ya pasamos `--no-sandbox` y
+   `--disable-dev-shm-usage` por defecto. Asegúrate de tener instalado Chrome/
+   Chromium y sus librerías:
+   ```bash
+   # Debian/Ubuntu
+   sudo apt-get install -y chromium-browser \
+     libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 libgbm1
+   ```
+3. **Usa el Chrome del sistema** (recomendado) e indica su ruta si no se detecta:
+   ```bash
+   # en .env
+   WA_USE_CHROME=true
+   WA_CHROME_PATH=/usr/bin/google-chrome   # o /usr/bin/chromium-browser
+   ```
+4. **Depurar viendo el navegador:** pon `WA_HEADLESS=false` en `.env` para ver
+   qué ocurre al cargar WhatsApp Web.
+
+Tras cambiar el `.env`, reinicia el `wa-server`.
+
 ## 🛡️ Reglas de negocio (sin excepciones)
 
 1. Nunca se envía el mismo `phone + messageId` dos veces (deduplicación).
