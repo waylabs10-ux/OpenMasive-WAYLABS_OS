@@ -1,0 +1,5 @@
+[
+  { "id": "msg1", "text": "Hola {name}, tenemos una oferta especial para ti 🎉" },
+  { "id": "msg2", "text": "No te pierdas nuestra promoción, {name}!" },
+  { "id": "msg3", "text": "{name}, gracias por tu interés. Escríbenos al {phone} para más info." }
+]
