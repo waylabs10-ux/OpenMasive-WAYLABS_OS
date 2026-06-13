@@ -14,6 +14,6 @@
     "express": "^4.21.1"
   },
   "optionalDependencies": {
-    "@openwa/wa-automate": "^4.74.0"
+    "@open-wa/wa-automate": "^4.76.0"
   }
 }

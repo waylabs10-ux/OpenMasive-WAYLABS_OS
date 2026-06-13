@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Envoltura sobre @openwa/wa-automate.
+ * Envoltura sobre @open-wa/wa-automate.
  *
  * Expone una API estable para el resto del servidor y soporta un MODO SIMULADO
  * (`WA_MOCK=true`) que reproduce el flujo completo (QR, conexión, envío,
@@ -15,7 +15,7 @@ const { registerBlockedNumber } = require("./store");
 
 function canRequireOpenWa() {
   try {
-    require.resolve("@openwa/wa-automate");
+    require.resolve("@open-wa/wa-automate");
     return true;
   } catch {
     return false;
@@ -34,9 +34,9 @@ if (WANT_MOCK) {
   console.log("[wa] Modo SIMULADO activo (WA_MOCK=true).");
 } else if (!HAS_OPENWA) {
   console.warn(
-    "[wa] ⚠️  WA_MOCK=false pero '@openwa/wa-automate' NO está instalado: " +
+    "[wa] ⚠️  WA_MOCK=false pero '@open-wa/wa-automate' NO está instalado: " +
       "se usará el modo SIMULADO como respaldo.\n" +
-      "      Instálalo con:  npm install --workspace wa-server @openwa/wa-automate"
+      "      Instálalo con:  npm install --workspace wa-server @open-wa/wa-automate"
   );
 } else {
   console.log("[wa] Modo REAL activo (OpenWA). Escanea el QR para conectar.");
@@ -124,7 +124,7 @@ function mockSendResult() {
 // ──────────────────────────────── OpenWA real ──────────────────────────────
 
 async function startReal() {
-  const { create, ev } = require("@openwa/wa-automate");
+  const { create, ev } = require("@open-wa/wa-automate");
 
   state.status = "connecting";
   state.startedAt = new Date().toISOString();

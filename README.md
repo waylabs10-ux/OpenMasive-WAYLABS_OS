@@ -12,7 +12,7 @@ deduplicación inteligente de envíos y protección anti-bloqueo del número.
 
 - **Frontend:** Next.js 14 (App Router) · TypeScript · Tailwind CSS · UI estilo shadcn/ui
 - **Estado:** Zustand con persistencia en `localStorage`
-- **WhatsApp:** `@openwa/wa-automate` (servidor Node.js separado)
+- **WhatsApp:** `@open-wa/wa-automate` (servidor Node.js separado)
 - **Persistencia:** archivos JSON (`sent-log.json`, `blocked-numbers.json`) + `localStorage`
 
 ## 🗂️ Arquitectura
@@ -39,10 +39,10 @@ deduplicación inteligente de envíos y protección anti-bloqueo del número.
 npm install
 
 # 2. Instalar dependencias del servidor WA
-#    Por defecto incluye @openwa/wa-automate (necesario para el modo REAL).
+#    Por defecto incluye @open-wa/wa-automate (necesario para el modo REAL).
 npm install --workspace wa-server
 #    Si lo instalaste con --no-optional o quieres asegurarte de tener OpenWA:
-npm install --workspace wa-server @openwa/wa-automate
+npm install --workspace wa-server @open-wa/wa-automate
 
 # 3. Configurar variables de entorno
 cp .env.example .env
@@ -66,15 +66,15 @@ desarrollo y demos.
 
 ### Modo real (`WA_MOCK=false`)
 
-> **Importante:** el modo real requiere que `@openwa/wa-automate` esté instalado.
+> **Importante:** el modo real requiere que `@open-wa/wa-automate` esté instalado.
 > Si pones `WA_MOCK=false` pero OpenWA **no** está instalado, el servidor seguirá
 > en modo simulado como respaldo y lo avisará en consola:
 >
 > ```
-> [wa] ⚠️  WA_MOCK=false pero '@openwa/wa-automate' NO está instalado...
+> [wa] ⚠️  WA_MOCK=false pero '@open-wa/wa-automate' NO está instalado...
 > ```
 >
-> Solución: `npm install --workspace wa-server @openwa/wa-automate` y reinicia el
+> Solución: `npm install --workspace wa-server @open-wa/wa-automate` y reinicia el
 > `wa-server`. Necesitas Chromium disponible (OpenWA lo descarga o usa
 > `PUPPETEER_EXECUTABLE_PATH`).
 
