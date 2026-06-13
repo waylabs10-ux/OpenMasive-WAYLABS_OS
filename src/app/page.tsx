@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircleMore, ShieldAlert } from "lucide-react";
 import { QRCodePanel } from "@/components/QRCodePanel";
 import { ContactsUploader } from "@/components/ContactsUploader";
-import { MessagesUploader } from "@/components/MessagesUploader";
+import { MessageComposer } from "@/components/MessageComposer";
 import { SendQueue } from "@/components/SendQueue";
 import { SentLogTable } from "@/components/SentLogTable";
 import { BlockedNumbersPanel } from "@/components/BlockedNumbersPanel";
@@ -107,7 +107,8 @@ export default function DashboardPage() {
         sentLog,
         blocked,
         config.messageSelection,
-        config.selectedMessageId
+        config.selectedMessageId,
+        config.dedupeBy
       ),
     [contacts, messages, sentLog, blocked, config]
   );
@@ -213,7 +214,7 @@ export default function DashboardPage() {
           loading={busy}
         />
         <ContactsUploader />
-        <MessagesUploader />
+        <MessageComposer />
       </div>
 
       {/* Envío */}
