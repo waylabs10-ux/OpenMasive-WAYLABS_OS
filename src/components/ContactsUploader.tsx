@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useCampaignStore } from "@/store/campaign";
-import { parseContactsJson } from "@/lib/validations";
+import { parseContactsJson, parseContactsCsv } from "@/lib/validations";
 import { displayPhone } from "@/lib/utils";
 
-/** Carga y validación de contactos desde un archivo JSON. */
+/** Carga y validación de contactos desde un archivo CSV o JSON. */
 export function ContactsUploader() {
   const contacts = useCampaignStore((s) => s.contacts);
   const mergeContacts = useCampaignStore((s) => s.mergeContacts);
@@ -22,8 +22,20 @@ export function ContactsUploader() {
   async function handleFile(file: File) {
     setFeedback(null);
     setErrors([]);
+    const text = await file.text();
+    const isJson =
+      file.name.toLowerCase().endsWith(".json") ||
+      /^\s*[[{]/.test(text); // empieza por [ o { → parece JSON
+
+    if (isJson) {
+      handleJson(text);
+    } else {
+      handleCsv(text);
+    }
+  }
+
+  function handleJson(text: string) {
     try {
-      const text = await file.text();
       const raw = JSON.parse(text);
       const { valid, errors: validationErrors, duplicates } =
         parseContactsJson(raw);
@@ -46,6 +58,25 @@ export function ContactsUploader() {
     }
   }
 
+  function handleCsv(text: string) {
+    const { valid, invalid, duplicates } = parseContactsCsv(text);
+
+    if (valid.length === 0) {
+      setErrors([
+        "No se encontraron teléfonos válidos en el CSV. Revisa que haya una columna con números de al menos 10 dígitos.",
+      ]);
+      return;
+    }
+
+    const { added, skipped } = mergeContacts(valid);
+    const omitted = skipped + duplicates;
+    setFeedback(
+      `${added} contactos añadidos` +
+        (omitted ? ` · ${omitted} duplicados omitidos` : "") +
+        (invalid ? ` · ${invalid} filas inválidas` : "")
+    );
+  }
+
   return (
     <Card className="flex h-full flex-col">
       <CardHeader>
@@ -59,7 +90,7 @@ export function ContactsUploader() {
         <input
           ref={inputRef}
           type="file"
-          accept="application/json,.json"
+          accept=".csv,text/csv,application/json,.json"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -75,7 +106,7 @@ export function ContactsUploader() {
             onClick={() => inputRef.current?.click()}
           >
             <Upload />
-            Cargar JSON
+            Cargar CSV o JSON
           </Button>
           {contacts.length > 0 && (
             <Button
@@ -110,12 +141,22 @@ export function ContactsUploader() {
 
         <div className="mt-1 flex-1 overflow-auto rounded-md border border-border">
           {contacts.length === 0 ? (
-            <p className="p-3 text-xs text-muted-foreground">
-              Formato esperado:{" "}
-              <code className="text-whatsapp">
-                [{`{ "name": "Juan", "phone": "573001234567" }`}]
-              </code>
-            </p>
+            <div className="space-y-2 p-3 text-xs text-muted-foreground">
+              <p>
+                <b className="text-foreground">CSV</b> con columnas{" "}
+                <code className="text-whatsapp">nombre,telefono</code> (con o sin
+                cabecera):
+              </p>
+              <pre className="overflow-auto rounded bg-black/30 p-2 text-[11px] leading-relaxed text-whatsapp">
+                nombre,telefono{"\n"}Juan,573001234567{"\n"}María,573009876543
+              </pre>
+              <p>
+                También se aceptan archivos JSON:{" "}
+                <code className="text-whatsapp">
+                  [{`{ "name": "Juan", "phone": "573001234567" }`}]
+                </code>
+              </p>
+            </div>
           ) : (
             <ul className="divide-y divide-border text-sm">
               {contacts.slice(0, 50).map((c, i) => (
