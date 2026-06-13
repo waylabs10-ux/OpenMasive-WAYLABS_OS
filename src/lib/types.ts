@@ -32,12 +32,20 @@ export interface Message {
 
 export type MessageSelection = "random" | "sequential" | "single";
 
+/**
+ * Estrategia de deduplicación:
+ *  - "phone": nunca se vuelve a enviar a un número ya contactado (por defecto).
+ *  - "message": evita repetir exactamente el mismo phone + messageId.
+ */
+export type DedupeBy = "phone" | "message";
+
 export interface CampaignConfig {
   minDelay: number;
   maxDelay: number;
   batchSize: number;
   messageSelection: MessageSelection;
   selectedMessageId?: string;
+  dedupeBy: DedupeBy;
 }
 
 export interface SentRecord {

@@ -83,9 +83,23 @@ class CampaignEngine {
     if (this.events.length > 200) this.events.length = 200;
   }
 
+  /** ¿La dedup es por teléfono? (por defecto sí). */
+  isPhoneDedup() {
+    return (this.config.dedupeBy ?? "phone") !== "message";
+  }
+
+  /** Comprueba si un envío ya se hizo, según la estrategia de dedup. */
+  alreadySent(phone, messageId) {
+    return this.isPhoneDedup()
+      ? store.hasBeenSentToPhone(phone)
+      : store.hasBeenSent(phone, messageId);
+  }
+
   /** Construye la cola aplicando dedup y protección antes de empezar. */
   buildQueue() {
     const protectedContacts = store.getProtectedContacts();
+    const phoneDedup = this.isPhoneDedup();
+    const seenInQueue = new Set();
     const queue = [];
     let index = 0;
 
@@ -101,10 +115,20 @@ class CampaignEngine {
         text: renderTemplate(message.text, contact),
       };
 
+      // Clave de unicidad dentro de la propia cola (evita duplicados si el CSV
+      // trae el mismo número repetido).
+      const queueKey = phoneDedup
+        ? contact.phone
+        : `${contact.phone}::${message.id}`;
+
       if (protectedContacts.has(contact.phone)) {
         item.skipReason = "protected";
-      } else if (store.hasBeenSent(contact.phone, message.id)) {
+      } else if (this.alreadySent(contact.phone, message.id)) {
         item.skipReason = "duplicate";
+      } else if (seenInQueue.has(queueKey)) {
+        item.skipReason = "duplicate";
+      } else {
+        seenInQueue.add(queueKey);
       }
       queue.push(item);
     }
@@ -203,7 +227,7 @@ class CampaignEngine {
       }
 
       // Reverificar contra el log en disco (puede haber cambiado).
-      if (store.hasBeenSent(item.phone, item.messageId)) {
+      if (this.alreadySent(item.phone, item.messageId)) {
         this.counters.skipped += 1;
         this.log("skipped", {
           phone: item.phone,

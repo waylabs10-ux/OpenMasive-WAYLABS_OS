@@ -24,7 +24,7 @@ import { useCampaignStore } from "@/store/campaign";
 import type {
   CampaignStatusResponse,
   SessionState,
-  MessageSelection,
+  DedupeBy,
 } from "@/lib/types";
 import type { DedupStats } from "@/lib/deduplication";
 import { formatDuration, formatTime } from "@/lib/utils";
@@ -152,42 +152,20 @@ export function SendQueue({
             />
           </div>
           <div className="space-y-1">
-            <Label>Selección</Label>
+            <Label>Evitar reenvíos</Label>
             <select
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-              value={config.messageSelection}
+              value={config.dedupeBy}
               disabled={isRunning || isPaused}
               onChange={(e) =>
-                setConfig({
-                  messageSelection: e.target.value as MessageSelection,
-                })
+                setConfig({ dedupeBy: e.target.value as DedupeBy })
               }
             >
-              <option value="random">Aleatorio</option>
-              <option value="sequential">Secuencial</option>
-              <option value="single">Único</option>
+              <option value="phone">Por número (nunca repetir)</option>
+              <option value="message">Por mensaje</option>
             </select>
           </div>
         </div>
-
-        {config.messageSelection === "single" && (
-          <div className="space-y-1">
-            <Label>Mensaje a enviar</Label>
-            <select
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-              value={config.selectedMessageId ?? ""}
-              disabled={isRunning || isPaused}
-              onChange={(e) => setConfig({ selectedMessageId: e.target.value })}
-            >
-              <option value="">— selecciona —</option>
-              {messages.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
 
         {/* Preview de deduplicación */}
         {dedup && (
@@ -198,7 +176,8 @@ export function SendQueue({
             </span>
             <span>·</span>
             <span>
-              Duplicados: <b>{dedup.duplicates}</b>
+              {config.dedupeBy === "phone" ? "Ya contactados" : "Duplicados"}:{" "}
+              <b>{dedup.duplicates}</b>
             </span>
             <span>·</span>
             <span>

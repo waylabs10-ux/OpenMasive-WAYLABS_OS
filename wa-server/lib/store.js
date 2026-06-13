@@ -60,6 +60,15 @@ function hasBeenSent(phone, messageId) {
   );
 }
 
+/**
+ * Comprueba si un número ya recibió CUALQUIER mensaje.
+ * Se usa con la estrategia de dedup por teléfono: nunca se contacta dos veces
+ * al mismo número, sin importar el contenido del mensaje.
+ */
+function hasBeenSentToPhone(phone) {
+  return getSentLog().some((r) => r.phone === phone);
+}
+
 /** Agrega un registro de envío confirmado. */
 function appendSentRecord(record) {
   const log = getSentLog();
@@ -167,6 +176,7 @@ module.exports = {
   BLOCKED_PATH,
   getSentLog,
   hasBeenSent,
+  hasBeenSentToPhone,
   appendSentRecord,
   getContactsReachedBy,
   getBlockedNumbers,
