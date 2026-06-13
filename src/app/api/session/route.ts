@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { proxyFetch } from "@/lib/wa-proxy";
 
 /**
  * Proxy de sesión hacia el wa-server.
@@ -6,32 +7,25 @@ import { NextResponse } from "next/server";
  *  POST /api/session {action}   → start | disconnect | reconnect
  */
 
-const WA_SERVER_URL = process.env.WA_SERVER_URL ?? "http://localhost:3001";
-
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  try {
-    const res = await fetch(`${WA_SERVER_URL}/session/status`, {
-      cache: "no-store",
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
-  } catch (err) {
-    return NextResponse.json(
-      {
-        status: "disconnected",
-        qr: null,
-        phoneNumber: null,
-        lastError: `No se pudo contactar el wa-server: ${
-          (err as Error).message
-        }`,
-        mock: false,
-        startedAt: null,
-      },
-      { status: 200 }
-    );
+  const result = await proxyFetch("/session/status");
+  if (result.ok && result.data) {
+    return NextResponse.json(result.data, { status: 200 });
   }
+  // Estado degradado: la UI sigue funcionando y muestra el motivo.
+  return NextResponse.json(
+    {
+      status: "disconnected",
+      qr: null,
+      phoneNumber: null,
+      lastError: result.error ?? "wa-server no disponible",
+      mock: false,
+      startedAt: null,
+    },
+    { status: 200 }
+  );
 }
 
 export async function POST(request: Request) {
@@ -45,18 +39,12 @@ export async function POST(request: Request) {
         ? "/session/reconnect"
         : "/session/start";
 
-  try {
-    const res = await fetch(`${WA_SERVER_URL}${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
-  } catch (err) {
-    return NextResponse.json(
-      { error: `No se pudo contactar el wa-server: ${(err as Error).message}` },
-      { status: 502 }
-    );
+  const result = await proxyFetch(endpoint, { method: "POST" });
+  if (result.ok && result.data) {
+    return NextResponse.json(result.data, { status: result.status });
   }
+  return NextResponse.json(
+    { error: result.error ?? "wa-server no disponible" },
+    { status: result.status }
+  );
 }

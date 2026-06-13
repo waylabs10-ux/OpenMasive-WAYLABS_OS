@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { proxyFetch } from "@/lib/wa-proxy";
 
 /**
  * Orquestador de mensajería hacia el wa-server.
@@ -6,8 +7,6 @@ import { NextResponse } from "next/server";
  *  GET  /api/messages?resource=status|summary|sent-log|blocked
  *  POST /api/messages {action: start|pause|resume|cancel|exclude, ...}
  */
-
-const WA_SERVER_URL = process.env.WA_SERVER_URL ?? "http://localhost:3001";
 
 export const dynamic = "force-dynamic";
 
@@ -18,23 +17,41 @@ const GET_ENDPOINTS: Record<string, string> = {
   blocked: "/messages/blocked",
 };
 
+/** Respuestas degradadas por recurso, para que el polling no falle si el
+ *  wa-server no está disponible. */
+function degraded(resource: string) {
+  switch (resource) {
+    case "sent-log":
+    case "blocked":
+      return [];
+    default:
+      return {
+        id: null,
+        status: "idle",
+        counters: { total: 0, sent: 0, skipped: 0, failed: 0, protected: 0 },
+        cursor: 0,
+        total: 0,
+        sentToday: 0,
+        startedAt: null,
+        finishedAt: null,
+        estimatedRemainingMs: 0,
+        config: {},
+        events: [],
+      };
+  }
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const resource = searchParams.get("resource") ?? "status";
   const endpoint = GET_ENDPOINTS[resource] ?? GET_ENDPOINTS.status;
 
-  try {
-    const res = await fetch(`${WA_SERVER_URL}${endpoint}`, {
-      cache: "no-store",
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
-  } catch (err) {
-    return NextResponse.json(
-      { error: `No se pudo contactar el wa-server: ${(err as Error).message}` },
-      { status: 502 }
-    );
+  const result = await proxyFetch(endpoint);
+  if (result.ok && result.data != null) {
+    return NextResponse.json(result.data, { status: 200 });
   }
+  // Degradación silenciosa: la UI sigue operativa aunque el wa-server falle.
+  return NextResponse.json(degraded(resource), { status: 200 });
 }
 
 export async function POST(request: Request) {
@@ -43,7 +60,6 @@ export async function POST(request: Request) {
 
   let endpoint = "/messages/campaign/status";
   let payload: unknown = undefined;
-  const method = "POST";
 
   switch (action) {
     case "start":
@@ -74,21 +90,19 @@ export async function POST(request: Request) {
       );
   }
 
-  try {
-    const res = await fetch(`${WA_SERVER_URL}${endpoint}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: payload ? JSON.stringify(payload) : undefined,
-      cache: "no-store",
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
-  } catch (err) {
-    return NextResponse.json(
-      { error: `No se pudo contactar el wa-server: ${(err as Error).message}` },
-      { status: 502 }
-    );
+  const result = await proxyFetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+
+  if (result.data != null) {
+    return NextResponse.json(result.data, { status: result.status });
   }
+  return NextResponse.json(
+    { error: result.error ?? "wa-server no disponible" },
+    { status: result.status }
+  );
 }
 
 /**

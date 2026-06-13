@@ -86,6 +86,35 @@ desarrollo y demos.
 4. Ajusta la configuración anti-bloqueo (delays, lote, selección de mensaje).
 5. Pulsa **Iniciar campaña** y sigue el progreso en tiempo real.
 
+## 🩺 Solución de problemas
+
+### `net::ERR_CONNECTION_REFUSED` en `:3000/api/...`
+
+Significa que **el frontend de Next.js no está corriendo en el puerto 3000**.
+Causa habitual: el 3000 estaba ocupado y Next arrancó en otro puerto
+(verás en consola `⚠ Port 3000 is in use, trying 3001 instead`). Si Next cae
+en el **3001 choca con el `wa-server`** y todo deja de funcionar.
+
+**Solución:**
+
+1. Asegúrate de que **solo** el frontend use el 3000 y **solo** el `wa-server`
+   el 3001 (no los inicies dos veces).
+2. Libera el puerto 3000 si está ocupado:
+   ```bash
+   # Linux/macOS
+   lsof -ti:3000 | xargs kill -9
+   # Windows (PowerShell)
+   npx kill-port 3000
+   ```
+3. Vuelve a arrancar con `npm run dev:all` y abre **exactamente** la URL que
+   imprime Next (`http://localhost:3000`).
+
+### El frontend dice "No se pudo contactar el wa-server"
+
+El frontend (3000) está bien, pero el `wa-server` (3001) no responde. Inícialo
+con `npm run wa-server:dev` y confirma que imprime
+`🟢 wa-server escuchando en http://localhost:3001`.
+
 ## 🛡️ Reglas de negocio (sin excepciones)
 
 1. Nunca se envía el mismo `phone + messageId` dos veces (deduplicación).
