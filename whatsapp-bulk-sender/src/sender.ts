@@ -1,4 +1,3 @@
-import { ChatId, Client, ContactId } from '@open-wa/wa-automate';
 import {
   DELAY_MAX_MS,
   DELAY_MIN_MS,
@@ -8,6 +7,7 @@ import {
 } from './config';
 import { Contact } from './csvLoader';
 import { isAlreadySent, markAsSent } from './tracker';
+import { WaClient } from './types';
 
 interface BulkSummary {
   sent: number;
@@ -16,7 +16,7 @@ interface BulkSummary {
 }
 
 export async function sendBulkMessages(
-  client: Client,
+  client: WaClient,
   contacts: Contact[],
   messageTemplate: string
 ): Promise<BulkSummary> {
@@ -36,8 +36,7 @@ export async function sendBulkMessages(
     }
 
     try {
-      const contactId = phone as ContactId;
-      const status = await client.checkNumberStatus(contactId);
+      const status = await client.checkNumberStatus(phone);
 
       if (!status.numberExists) {
         markAsSent(phone, name, 'failed', 'not_on_whatsapp');
@@ -47,7 +46,7 @@ export async function sendBulkMessages(
       }
 
       const message = formatMessage(messageTemplate, name);
-      await client.sendText(contactId as ChatId, message);
+      await client.sendText(phone, message);
 
       markAsSent(phone, name, 'success');
       summary.sent++;
