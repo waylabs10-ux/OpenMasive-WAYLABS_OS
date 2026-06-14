@@ -1,12 +1,18 @@
 import { create, Client } from '@open-wa/wa-automate';
 import fs from 'fs';
 import {
+  AUTH_TIMEOUT,
   CONTACTS_CSV,
+  ENABLE_NO_SANDBOX,
   HEADLESS,
   log,
   MESSAGE_FILE,
+  POPUP_PORT,
+  QR_TIMEOUT,
+  SESSION_DATA_PATH,
   SESSION_NAME,
   USE_CHROME,
+  USE_POPUP,
 } from './config';
 import { loadContacts } from './csvLoader';
 import { sendBulkMessages } from './sender';
@@ -39,19 +45,50 @@ async function main(): Promise<void> {
   log(`Sesión: ${SESSION_NAME}`, 'info');
   log(`Contactos: ${CONTACTS_CSV}`, 'info');
 
-  client = await create({
+  if (!fs.existsSync(SESSION_DATA_PATH)) {
+    fs.mkdirSync(SESSION_DATA_PATH, { recursive: true });
+  }
+
+  if (HEADLESS) {
+    log('Modo headless activo. Espera el QR en consola o abre el popup en el navegador.', 'info');
+  } else {
+    log('Se abrirá una ventana de Chromium. Escanea el QR ahí.', 'info');
+  }
+
+  if (USE_POPUP) {
+    log(
+      `QR también disponible en: http://localhost:${POPUP_PORT}/qr?sessionId=${SESSION_NAME}`,
+      'info'
+    );
+  }
+
+  log('Esperando autenticación de WhatsApp (puede tardar 1-2 minutos)...', 'info');
+
+  const waConfig: Parameters<typeof create>[0] = {
     sessionId: SESSION_NAME,
+    sessionDataPath: SESSION_DATA_PATH,
     headless: HEADLESS,
     useChrome: USE_CHROME,
-    qrTimeout: 60,
-    authTimeout: 60,
+    qrTimeout: QR_TIMEOUT,
+    authTimeout: AUTH_TIMEOUT,
     killProcessOnBrowserClose: true,
     throwErrorOnTosBlock: false,
-    chromiumArgs: ['--no-sandbox', '--disable-setuid-sandbox'],
     qrLogSkip: false,
-    disableSpins: true,
+    disableSpins: false,
     multiDevice: true,
-  });
+    popup: USE_POPUP ? POPUP_PORT : false,
+    ezqr: USE_POPUP,
+    waitForRipeSession: false,
+    waitForRipeSessionTimeout: 0,
+    logConsoleErrors: true,
+  };
+
+  if (ENABLE_NO_SANDBOX) {
+    waConfig.chromiumArgs = ['--no-sandbox', '--disable-setuid-sandbox'];
+    log('ENABLE_NO_SANDBOX=true (solo recomendado en Docker/Linux sin display)', 'info');
+  }
+
+  client = await create(waConfig);
 
   log('✅ Autenticación exitosa. Sesión de WhatsApp lista.', 'success');
 

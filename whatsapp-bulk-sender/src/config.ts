@@ -9,8 +9,14 @@ export const SESSION_NAME = process.env.SESSION_NAME ?? 'bulk-sender-session';
 export const DB_PATH = path.resolve(__dirname, '../data/sent.db');
 export const CONTACTS_CSV = path.resolve(__dirname, '../data/contacts.csv');
 export const MESSAGE_FILE = path.resolve(__dirname, '../data/message.txt');
-export const HEADLESS = true;
-export const USE_CHROME = false;
+export const SESSION_DATA_PATH = path.resolve(__dirname, '../sessions');
+export const HEADLESS = process.env.HEADLESS !== 'false';
+export const USE_CHROME = process.env.USE_CHROME === 'true';
+export const USE_POPUP = process.env.USE_POPUP !== 'false';
+export const POPUP_PORT = parseInt(process.env.POPUP_PORT ?? '3000', 10);
+export const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT ?? '0', 10);
+export const AUTH_TIMEOUT = parseInt(process.env.AUTH_TIMEOUT ?? '0', 10);
+export const ENABLE_NO_SANDBOX = process.env.ENABLE_NO_SANDBOX === 'true';
 
 const COLORS = {
   green: '\x1b[32m',

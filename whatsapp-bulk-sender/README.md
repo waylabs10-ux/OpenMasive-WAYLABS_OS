@@ -71,14 +71,22 @@ Hola {name}, este es un mensaje de prueba.
 
 Si el contacto no tiene nombre, se usa `estimado/a`.
 
-### 4. Configurar variables de entorno (opcional)
+### 4. Configurar variables de entorno
 
-El archivo `.env` ya incluye valores por defecto:
+Copia el ejemplo y ajústalo según tu entorno:
+
+```bash
+cp .env.example .env
+```
 
 ```env
 SESSION_NAME=bulk-sender
 DELAY_MIN_MS=8000
 DELAY_MAX_MS=20000
+HEADLESS=false        # false = ventana visible con QR (recomendado la 1ª vez)
+USE_POPUP=true        # QR en http://localhost:3000/qr
+QR_TIMEOUT=0          # 0 = esperar indefinidamente
+AUTH_TIMEOUT=0
 ```
 
 ### 5. Ejecutar
@@ -133,6 +141,40 @@ Formato: `[HH:MM:SS] mensaje`
 | Amarillo | Skip (ya enviado) |
 | Rojo | Error |
 | Cyan | Info |
+
+## Solución de problemas
+
+### Se queda en "Page loaded" sin mostrar QR
+
+Esto es normal en la primera ejecución: el sistema **espera que escanees el QR**. Prueba:
+
+1. **Crear `.env`** desde el ejemplo:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Usar ventana visible** (más fácil la primera vez):
+   ```env
+   HEADLESS=false
+   USE_POPUP=true
+   ```
+
+3. **Abrir el QR en el navegador** mientras corre `npm start`:
+   ```
+   http://localhost:3000/qr?sessionId=bulk-sender
+   ```
+
+4. **No uses `chromiumArgs`** con multi-device (causa bloqueos). Solo activa en Docker:
+   ```env
+   ENABLE_NO_SANDBOX=true
+   ```
+
+5. **Espera 1-2 minutos** después de escanear antes de reiniciar (recomendación de @open-wa).
+
+6. Si falla, borra sesiones anteriores y reintenta:
+   ```bash
+   rm -rf sessions/* _IGNORE_*
+   ```
 
 ## Advertencia
 
