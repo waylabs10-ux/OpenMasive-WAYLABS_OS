@@ -82,6 +82,38 @@ El sistema busca en este orden:
 
 ## Solución de problemas
 
+### Se queda "pegado" sin hacer nada
+
+1. **Actualiza el código:**
+   ```bash
+   git pull origin main
+   cd whatsapp-bulk-sender
+   npm install
+   ```
+
+2. **Borra sesión anterior corrupta:**
+   ```bash
+   rm -rf sessions/bulk-sender
+   ```
+
+3. **Asegúrate de tener en `.env`:**
+   ```env
+   HEADLESS=false
+   FIREFOX_PATH=/usr/bin/firefox-esr
+   ```
+
+4. **Ejecuta y observa los pasos en consola:**
+   ```
+   Abriendo Firefox...
+   Cargando web.whatsapp.com...
+   Cargando librería de WhatsApp (WPP)...
+   Esperando escaneo del QR...
+   ```
+
+5. Si ves `Aún esperando QR...` cada 15s → **es normal**, escanea el QR en Firefox o en la terminal.
+
+6. Si se queda antes de "Cargando librería WPP", revisa que Firefox abra la ventana (no uses headless la primera vez).
+
 ### "Firefox no encontrado"
 
 ```bash

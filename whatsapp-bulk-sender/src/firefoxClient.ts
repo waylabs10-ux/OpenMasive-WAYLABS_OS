@@ -18,19 +18,62 @@ import {
 import { findFirefoxExecutable } from './firefox';
 import { WaClient } from './types';
 
-const WHATSAPP_URL = 'https://web.whatsapp.com';
+const WHATSAPP_URL = 'https://web.whatsapp.com/';
 const WA_JS_PATH = require.resolve('@wppconnect/wa-js');
 
-async function preparePage(page: Page, version: string): Promise<void> {
-  await page.route('https://web.whatsapp.com/**', (route) => {
-    if (route.request().url() === WHATSAPP_URL) {
-      return route.fulfill({
-        status: 200,
-        contentType: 'text/html',
-        body: getPageContent(version),
-      });
+function waitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveBundledVersion(): string {
+  const bundled = getLatestVersion();
+  getPageContent(bundled);
+  return bundled;
+}
+
+async function resolveWaWebVersion(): Promise<string> {
+  const bundled = resolveBundledVersion();
+
+  try {
+    const online = await fetchCurrentVersion();
+    if (online) {
+      try {
+        getPageContent(online);
+        log(`Versión WhatsApp: ${online}`, 'info');
+        return online;
+      } catch {
+        log(
+          `Versión online ${online} no está en el paquete. Usando ${bundled}`,
+          'info'
+        );
+      }
     }
-    return route.continue();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`No se pudo consultar versión online: ${message}`, 'info');
+  }
+
+  log(`Versión WhatsApp local: ${bundled}`, 'info');
+  return bundled;
+}
+
+async function preparePage(page: Page, version: string): Promise<void> {
+  await page.route('https://web.whatsapp.com/**', async (route) => {
+    const url = route.request().url().replace(/\/$/, '');
+    if (url === WHATSAPP_URL.replace(/\/$/, '')) {
+      try {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: getPageContent(version),
+        });
+        return;
+      } catch {
+        await route.continue();
+        return;
+      }
+    }
+    await route.continue();
   });
 
   await page.addInitScript(() => {
@@ -43,7 +86,8 @@ async function preparePage(page: Page, version: string): Promise<void> {
       })
       .catch(() => null);
 
-    navigator.serviceWorker.register = () => Promise.reject(new Error('disabled'));
+    navigator.serviceWorker.register = () =>
+      Promise.reject(new Error('service worker disabled'));
 
     setInterval(() => {
       window.onerror = console.error;
@@ -51,12 +95,34 @@ async function preparePage(page: Page, version: string): Promise<void> {
       (window as unknown as { wppForceMainLoad?: boolean }).wppForceMainLoad = true;
     }, 500);
   });
+}
 
-  page.on('load', async () => {
-    setTimeout(async () => {
-      await page.addScriptTag({ path: WA_JS_PATH });
-    }, 1000);
+async function injectWaJs(page: Page): Promise<void> {
+  const alreadyInjected = await page.evaluate(() => {
+    return Boolean((window as unknown as { WPP?: unknown }).WPP);
   });
+
+  if (!alreadyInjected) {
+    await page.addScriptTag({ path: WA_JS_PATH });
+  }
+
+  await page.waitForFunction(
+    () => Boolean((window as unknown as { WPP?: { isReady?: boolean } }).WPP),
+    null,
+    { timeout: 90_000 }
+  );
+}
+
+async function waitForWppReady(page: Page): Promise<void> {
+  log('Cargando librería de WhatsApp (WPP)...', 'info');
+
+  await page.waitForFunction(
+    () => (window as unknown as { WPP?: { isReady?: boolean } }).WPP?.isReady === true,
+    null,
+    { timeout: 180_000 }
+  );
+
+  log('WhatsApp Web cargado correctamente.', 'success');
 }
 
 async function waitForAuthentication(page: Page): Promise<void> {
@@ -67,60 +133,56 @@ async function waitForAuthentication(page: Page): Promise<void> {
   });
 
   const isRegistered = await page.evaluate(() => {
-    return (window as unknown as { WPP?: { conn: { isRegistered: () => boolean | null } } }).WPP?.conn.isRegistered();
+    return (window as unknown as { WPP?: { conn: { isRegistered: () => boolean | null } } })
+      .WPP?.conn.isRegistered();
   });
 
-  if (isRegistered === false) {
-    await page.evaluate(() => {
-      const wpp = (window as unknown as {
-        WPP: { on: (event: string, cb: (auth: { fullCode: string }) => void) => void };
-        qrChanged: (qr: string) => void;
-      }).WPP;
-      wpp.on('conn.auth_code_change', (auth) => {
-        (window as unknown as { qrChanged: (qr: string) => void }).qrChanged(
-          auth.fullCode + ',1'
-        );
-      });
-    });
+  if (isRegistered === true) {
+    log('Sesión ya autenticada en Firefox.', 'success');
+    return;
   }
 
-  const authTimeout = AUTH_TIMEOUT === 0 ? 0 : AUTH_TIMEOUT * 1000;
-  const qrTimeout = QR_TIMEOUT === 0 ? 0 : QR_TIMEOUT * 1000;
-  const timeout = Math.max(authTimeout, qrTimeout);
+  await page.evaluate(() => {
+    const wpp = (window as unknown as {
+      WPP: { on: (event: string, cb: (auth: { fullCode: string }) => void) => void };
+      qrChanged: (qr: string) => void;
+    }).WPP;
+
+    wpp.on('conn.auth_code_change', (auth) => {
+      (window as unknown as { qrChanged: (qr: string) => void }).qrChanged(
+        auth.fullCode + ',1'
+      );
+    });
+  });
+
+  const timeoutMs =
+    QR_TIMEOUT === 0 && AUTH_TIMEOUT === 0
+      ? 0
+      : Math.max(QR_TIMEOUT, AUTH_TIMEOUT) * 1000;
 
   log('Esperando escaneo del QR en Firefox...', 'info');
+  log('Si no ves QR: abre la ventana de Firefox y escanéalo ahí.', 'info');
 
-  await page.waitForFunction(
-    () => {
-      const wpp = (window as unknown as { WPP?: { conn: { isRegistered: () => boolean | null } } }).WPP;
-      return wpp?.conn.isRegistered() === true;
-    },
-    null,
-    { timeout }
-  );
+  const startedAt = Date.now();
+  const heartbeat = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    log(`Aún esperando QR... (${elapsed}s)`, 'info');
+  }, 15_000);
 
-  await page.waitForFunction(
-    () => {
-      const wpp = (window as unknown as { WPP?: { isReady?: boolean } }).WPP;
-      return wpp?.isReady === true;
-    },
-    null,
-    { timeout: 120_000 }
-  );
-}
-
-async function resolveWaWebVersion(): Promise<string> {
   try {
-    const version = await fetchCurrentVersion();
-    if (version) return version;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log(`No se pudo obtener versión online de WhatsApp: ${message}`, 'info');
+    await page.waitForFunction(
+      () => {
+        const wpp = (window as unknown as {
+          WPP?: { conn: { isRegistered: () => boolean | null } };
+        }).WPP;
+        return wpp?.conn.isRegistered() === true;
+      },
+      null,
+      { timeout: timeoutMs }
+    );
+  } finally {
+    clearInterval(heartbeat);
   }
-
-  const fallback = getLatestVersion();
-  log(`Usando versión local de WhatsApp: ${fallback}`, 'info');
-  return fallback;
 }
 
 export async function createFirefoxClient(): Promise<WaClient> {
@@ -130,11 +192,17 @@ export async function createFirefoxClient(): Promise<WaClient> {
   const sessionDir = path.join(SESSION_DATA_PATH, SESSION_NAME);
   const waWebVersion = await resolveWaWebVersion();
 
+  log('Abriendo Firefox...', 'info');
   const context: BrowserContext = await firefox.launchPersistentContext(sessionDir, {
     headless: HEADLESS,
     executablePath: firefoxPath,
     viewport: { width: 1440, height: 900 },
     locale: 'es-CO',
+    ignoreHTTPSErrors: true,
+    firefoxUserPrefs: {
+      'media.navigator.permission.disabled': true,
+      'dom.webnotifications.enabled': false,
+    },
     userAgent:
       'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
   });
@@ -142,29 +210,18 @@ export async function createFirefoxClient(): Promise<WaClient> {
   const page = context.pages()[0] ?? (await context.newPage());
   await preparePage(page, waWebVersion);
 
+  log('Cargando web.whatsapp.com...', 'info');
   await page.goto(WHATSAPP_URL, {
-    waitUntil: 'load',
-    timeout: 0,
+    waitUntil: 'domcontentloaded',
+    timeout: 120_000,
     referer: 'https://whatsapp.com/',
   });
 
-  page.setDefaultTimeout(0);
-
-  await page
-    .waitForFunction(
-      () => (window as unknown as { Debug?: { VERSION?: string } }).Debug?.VERSION,
-      null,
-      { timeout: 120_000 }
-    )
-    .catch(() => null);
-
-  await page.waitForFunction(
-    () => (window as unknown as { WPP?: { isReady?: boolean } }).WPP?.isReady,
-    null,
-    { timeout: 120_000 }
-  );
-
+  await waitMs(1500);
+  await injectWaJs(page);
+  await waitForWppReady(page);
   await waitForAuthentication(page);
+
   log('Sesión de WhatsApp autenticada en Firefox.', 'success');
 
   return {
