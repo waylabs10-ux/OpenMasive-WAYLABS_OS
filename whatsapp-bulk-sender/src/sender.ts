@@ -15,6 +15,17 @@ interface BulkSummary {
   failed: number;
 }
 
+function simplifyError(message: string): string {
+  const firstLine = message.split('\n')[0];
+  if (firstLine.includes('invariant')) {
+    return 'Número inválido o sin chat en WhatsApp';
+  }
+  if (firstLine.includes('sin ACK')) {
+    return 'WhatsApp no confirmó el envío';
+  }
+  return firstLine.length > 180 ? `${firstLine.slice(0, 180)}...` : firstLine;
+}
+
 function isNotOnWhatsAppError(message: string): boolean {
   const lower = message.toLowerCase();
   return (
@@ -22,7 +33,9 @@ function isNotOnWhatsAppError(message: string): boolean {
     lower.includes('not found') ||
     lower.includes('invalid wid') ||
     lower.includes('no lid') ||
-    lower.includes('not exist')
+    lower.includes('not exist') ||
+    lower.includes('no registrado') ||
+    lower.includes('sin chat')
   );
 }
 
@@ -62,7 +75,8 @@ export async function sendBulkMessages(
         log(`   Destino confirmado por WhatsApp: ${result.to}`, 'info');
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const errorMessage = simplifyError(rawMessage);
       const status = isNotOnWhatsAppError(errorMessage)
         ? 'not_on_whatsapp'
         : errorMessage;

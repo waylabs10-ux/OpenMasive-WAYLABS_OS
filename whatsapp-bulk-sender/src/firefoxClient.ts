@@ -236,7 +236,14 @@ export async function createFirefoxClient(): Promise<WaClient> {
           async ({ chatId, text }) => {
             const wpp = (window as unknown as {
               WPP: {
+                contact: {
+                  queryExists: (
+                    id: string
+                  ) => Promise<{ wid?: string | { _serialized?: string } } | null>;
+                };
                 chat: {
+                  find: (id: string) => Promise<{ id?: { _serialized?: string } }>;
+                  openChatBottom: (id: string) => Promise<boolean>;
                   sendTextMessage: (
                     id: string,
                     msg: string,
@@ -257,6 +264,29 @@ export async function createFirefoxClient(): Promise<WaClient> {
               };
             }).WPP;
 
+            let targetId = chatId;
+
+            const lookup = await Promise.race([
+              wpp.contact.queryExists(chatId),
+              new Promise<'timeout'>((resolve) =>
+                setTimeout(() => resolve('timeout'), 6_000)
+              ),
+            ]);
+
+            if (lookup === 'timeout') {
+              // continuar con el id original
+            } else if (!lookup?.wid) {
+              throw new Error('Número no registrado en WhatsApp');
+            } else {
+              targetId =
+                typeof lookup.wid === 'string'
+                  ? lookup.wid
+                  : lookup.wid._serialized ?? chatId;
+            }
+
+            await wpp.chat.find(targetId);
+            await wpp.chat.openChatBottom(targetId).catch(() => false);
+
             const ackTimeout = new Promise<never>((_, reject) => {
               setTimeout(
                 () => reject(new Error('WhatsApp no confirmó el envío (sin ACK)')),
@@ -265,7 +295,7 @@ export async function createFirefoxClient(): Promise<WaClient> {
             });
 
             const result = await Promise.race([
-              wpp.chat.sendTextMessage(chatId, text, {
+              wpp.chat.sendTextMessage(targetId, text, {
                 waitForAck: true,
                 linkPreview: false,
                 markIsRead: false,
@@ -292,7 +322,7 @@ export async function createFirefoxClient(): Promise<WaClient> {
             return {
               messageId: result.id,
               ack: result.ack ?? stored.ack ?? 0,
-              to: result.to,
+              to: result.to ?? targetId,
             };
           },
           { chatId: phone, text: message }
