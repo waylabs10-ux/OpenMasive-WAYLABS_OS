@@ -36,7 +36,25 @@ async function resolveWaWebVersion(): Promise<string> {
   return bundled;
 }
 
-async function preparePage(page: Page): Promise<void> {
+async function preparePage(page: Page, version: string): Promise<void> {
+  await page.route('https://web.whatsapp.com/**', async (route) => {
+    const url = route.request().url().replace(/\/$/, '');
+    if (url === WHATSAPP_URL.replace(/\/$/, '')) {
+      try {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: getPageContent(version),
+        });
+        return;
+      } catch {
+        await route.continue();
+        return;
+      }
+    }
+    await route.continue();
+  });
+
   await page.addInitScript(() => {
     navigator.serviceWorker
       .getRegistrations()
@@ -177,15 +195,15 @@ export async function createFirefoxClient(): Promise<WaClient> {
   ensurePlaywrightFirefox();
 
   const sessionDir = path.join(SESSION_DATA_PATH, SESSION_NAME);
-  await resolveWaWebVersion();
+  const waWebVersion = await resolveWaWebVersion();
 
   const { page, close } = await launchFirefox(sessionDir);
-  await preparePage(page);
+  await preparePage(page, waWebVersion);
 
-  log('Cargando web.whatsapp.com (versión en vivo)...', 'info');
+  log('Cargando WhatsApp Web (HTML compatible con wa-js)...', 'info');
   await page.goto(WHATSAPP_URL, {
-    waitUntil: 'networkidle',
-    timeout: 180_000,
+    waitUntil: 'domcontentloaded',
+    timeout: 120_000,
     referer: 'https://whatsapp.com/',
   });
 
