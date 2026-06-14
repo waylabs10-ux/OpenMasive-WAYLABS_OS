@@ -1,0 +1,27 @@
+{
+  "name": "whatsapp-bulk-sender",
+  "version": "1.0.0",
+  "description": "Sistema de envío masivo de WhatsApp con rate limiting y tracking SQLite",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "start:prod": "node dist/index.js"
+  },
+  "dependencies": {
+    "@open-wa/wa-automate": "^4.76.0",
+    "better-sqlite3": "^9.6.0",
+    "dotenv": "^16.4.5",
+    "papaparse": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "@types/papaparse": "^5.3.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

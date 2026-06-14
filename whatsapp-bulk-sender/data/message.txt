@@ -1,0 +1,1 @@
+Hola {name}, este es un mensaje de prueba desde el sistema de envío masivo.

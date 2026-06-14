@@ -1,0 +1,11 @@
+node_modules/
+dist/
+sessions/
+data/sent.db
+.env
+
+# managed by open-wa
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed by open-wa

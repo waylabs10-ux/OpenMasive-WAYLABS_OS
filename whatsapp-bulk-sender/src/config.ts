@@ -1,0 +1,46 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+export const DELAY_MIN_MS = parseInt(process.env.DELAY_MIN_MS ?? '8000', 10);
+export const DELAY_MAX_MS = parseInt(process.env.DELAY_MAX_MS ?? '20000', 10);
+export const SESSION_NAME = process.env.SESSION_NAME ?? 'bulk-sender-session';
+export const DB_PATH = path.resolve(__dirname, '../data/sent.db');
+export const CONTACTS_CSV = path.resolve(__dirname, '../data/contacts.csv');
+export const MESSAGE_FILE = path.resolve(__dirname, '../data/message.txt');
+export const HEADLESS = true;
+export const USE_CHROME = false;
+
+const COLORS = {
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+  cyan: '\x1b[36m',
+  reset: '\x1b[0m',
+} as const;
+
+export type LogType = 'success' | 'skip' | 'error' | 'info';
+
+const LOG_COLORS: Record<LogType, string> = {
+  success: COLORS.green,
+  skip: COLORS.yellow,
+  error: COLORS.red,
+  info: COLORS.cyan,
+};
+
+export function log(message: string, type: LogType = 'info'): void {
+  const now = new Date();
+  const timestamp = now.toLocaleTimeString('es-CO', { hour12: false });
+  console.log(`${LOG_COLORS[type]}[${timestamp}] ${message}${COLORS.reset}`);
+}
+
+export function randomDelay(minMs: number, maxMs: number): Promise<void> {
+  const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+  return new Promise((resolve) => setTimeout(resolve, delay));
+}
+
+export function formatMessage(template: string, name?: string): string {
+  const displayName = name?.trim() || 'estimado/a';
+  return template.replace(/\{name\}/g, displayName);
+}
