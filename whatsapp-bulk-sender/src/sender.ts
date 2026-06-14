@@ -24,6 +24,7 @@ export async function sendBulkMessages(
   const summary: BulkSummary = { sent: 0, skipped: 0, failed: 0 };
 
   log(`Iniciando envío masivo a ${total} contactos...`, 'info');
+  await client.waitUntilReady();
 
   for (let i = 0; i < contacts.length; i++) {
     const { phone, name } = contacts[i];
@@ -36,9 +37,10 @@ export async function sendBulkMessages(
     }
 
     try {
+      log(`Verificando ${phone} (${index}/${total})...`, 'info');
       const status = await client.checkNumberStatus(phone);
 
-      if (!status.numberExists) {
+      if (!status.numberExists || !status.wid) {
         markAsSent(phone, name, 'failed', 'not_on_whatsapp');
         log(`❌ ${phone} no está en WhatsApp`, 'error');
         summary.failed++;
@@ -46,7 +48,8 @@ export async function sendBulkMessages(
       }
 
       const message = formatMessage(messageTemplate, name);
-      await client.sendText(phone, message);
+      log(`Enviando a ${status.wid}...`, 'info');
+      await client.sendText(status.wid, message);
 
       markAsSent(phone, name, 'success');
       summary.sent++;

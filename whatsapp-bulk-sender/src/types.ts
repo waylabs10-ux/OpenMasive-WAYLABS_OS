@@ -1,5 +1,11 @@
+export interface CheckNumberResult {
+  numberExists: boolean;
+  wid?: string;
+}
+
 export interface WaClient {
-  checkNumberStatus(phone: string): Promise<{ numberExists: boolean }>;
+  waitUntilReady(): Promise<void>;
+  checkNumberStatus(phone: string): Promise<CheckNumberResult>;
   sendText(phone: string, message: string): Promise<void>;
   kill(): Promise<void>;
 }

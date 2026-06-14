@@ -14,10 +14,11 @@ import {
 } from './config';
 import { ensurePlaywrightFirefox } from './firefox';
 import { launchFirefox } from './firefoxLauncher';
-import { WaClient } from './types';
+import { CheckNumberResult, WaClient } from './types';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
 const WA_JS_PATH = require.resolve('@wppconnect/wa-js');
+const PAGE_TIMEOUT_MS = 60_000;
 
 function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -103,6 +104,33 @@ async function waitForWppReady(page: Page): Promise<void> {
   log('WhatsApp Web cargado correctamente.', 'success');
 }
 
+async function waitForMainReady(page: Page): Promise<void> {
+  log('Sincronizando WhatsApp (espera que carguen tus chats)...', 'info');
+
+  const startedAt = Date.now();
+  const heartbeat = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    log(`Sincronizando... (${elapsed}s)`, 'info');
+  }, 15_000);
+
+  try {
+    await page.waitForFunction(
+      () => {
+        const wpp = (window as unknown as {
+          WPP?: { conn?: { isMainReady?: () => boolean } };
+        }).WPP;
+        return wpp?.conn?.isMainReady?.() === true;
+      },
+      null,
+      { timeout: 300_000 }
+    );
+  } finally {
+    clearInterval(heartbeat);
+  }
+
+  log('WhatsApp sincronizado. Listo para enviar.', 'success');
+}
+
 async function waitForAuthentication(page: Page): Promise<void> {
   await page.exposeFunction('qrChanged', (qr: string) => {
     const code = qr.split(',')[0];
@@ -183,28 +211,67 @@ export async function createFirefoxClient(): Promise<WaClient> {
   await injectWaJs(page);
   await waitForWppReady(page);
   await waitForAuthentication(page);
+  await waitForMainReady(page);
 
   log('Sesión de WhatsApp autenticada en Firefox.', 'success');
 
+  page.setDefaultTimeout(PAGE_TIMEOUT_MS);
+
   return {
-    async checkNumberStatus(phone: string): Promise<{ numberExists: boolean }> {
-      const numberExists = await page.evaluate(async (chatId) => {
+    async waitUntilReady(): Promise<void> {
+      await waitForMainReady(page);
+    },
+
+    async checkNumberStatus(phone: string): Promise<CheckNumberResult> {
+      return page.evaluate(async (chatId) => {
         const wpp = (window as unknown as {
-          WPP: { contact: { queryExists: (id: string) => Promise<{ wid?: string } | null> } };
+          WPP: {
+            contact: {
+              queryExists: (
+                id: string
+              ) => Promise<{ wid?: string | { _serialized?: string } } | null>;
+            };
+          };
         }).WPP;
-        const result = await wpp.contact.queryExists(chatId);
-        return !!(result && result.wid);
+
+        const timeout = new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), 30_000);
+        });
+
+        const result = await Promise.race([
+          wpp.contact.queryExists(chatId),
+          timeout,
+        ]);
+
+        if (!result?.wid) {
+          return { numberExists: false };
+        }
+
+        const wid =
+          typeof result.wid === 'string'
+            ? result.wid
+            : result.wid._serialized ?? chatId;
+
+        return { numberExists: true, wid };
       }, phone);
-      return { numberExists };
     },
 
     async sendText(phone: string, message: string): Promise<void> {
       await page.evaluate(
         async ({ chatId, text }) => {
           const wpp = (window as unknown as {
-            WPP: { chat: { sendTextMessage: (id: string, msg: string) => Promise<unknown> } };
+            WPP: {
+              chat: {
+                sendTextMessage: (
+                  id: string,
+                  msg: string,
+                  options?: { waitForAck?: boolean }
+                ) => Promise<unknown>;
+              };
+            };
           }).WPP;
-          await wpp.chat.sendTextMessage(chatId, text);
+
+          await wpp.chat.sendTextMessage(chatId, text, { waitForAck: true });
         },
         { chatId: phone, text: message }
       );
