@@ -82,6 +82,10 @@ El sistema busca en este orden:
 
 ## Solución de problemas
 
+### Se queda en "Conectando Playwright..."
+
+Eso ya no debería ocurrir. Actualiza con `git pull` — ahora usa `firefox.launch()` directo, sin WebSocket.
+
 ### Se queda "pegado" sin hacer nada
 
 1. **Actualiza el código:**
