@@ -14,11 +14,11 @@ import {
 } from './config';
 import { ensurePlaywrightFirefox } from './firefox';
 import { launchFirefox } from './firefoxLauncher';
-import { CheckNumberResult, WaClient } from './types';
+import { PAGE_ACTION_TIMEOUT_MS, withTimeout } from './timeouts';
+import { WaClient } from './types';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
 const WA_JS_PATH = require.resolve('@wppconnect/wa-js');
-const PAGE_TIMEOUT_MS = 60_000;
 
 function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -215,65 +215,50 @@ export async function createFirefoxClient(): Promise<WaClient> {
 
   log('Sesión de WhatsApp autenticada en Firefox.', 'success');
 
-  page.setDefaultTimeout(PAGE_TIMEOUT_MS);
+  page.setDefaultTimeout(PAGE_ACTION_TIMEOUT_MS);
 
   return {
     async waitUntilReady(): Promise<void> {
-      await waitForMainReady(page);
-    },
+      const ready = await page.evaluate(() => {
+        return (window as unknown as {
+          WPP?: { conn?: { isMainReady?: () => boolean } };
+        }).WPP?.conn?.isMainReady?.();
+      });
 
-    async checkNumberStatus(phone: string): Promise<CheckNumberResult> {
-      return page.evaluate(async (chatId) => {
-        const wpp = (window as unknown as {
-          WPP: {
-            contact: {
-              queryExists: (
-                id: string
-              ) => Promise<{ wid?: string | { _serialized?: string } } | null>;
-            };
-          };
-        }).WPP;
-
-        const timeout = new Promise<null>((resolve) => {
-          setTimeout(() => resolve(null), 30_000);
-        });
-
-        const result = await Promise.race([
-          wpp.contact.queryExists(chatId),
-          timeout,
-        ]);
-
-        if (!result?.wid) {
-          return { numberExists: false };
-        }
-
-        const wid =
-          typeof result.wid === 'string'
-            ? result.wid
-            : result.wid._serialized ?? chatId;
-
-        return { numberExists: true, wid };
-      }, phone);
+      if (!ready) {
+        await waitForMainReady(page);
+      }
     },
 
     async sendText(phone: string, message: string): Promise<void> {
-      await page.evaluate(
-        async ({ chatId, text }) => {
-          const wpp = (window as unknown as {
-            WPP: {
-              chat: {
-                sendTextMessage: (
-                  id: string,
-                  msg: string,
-                  options?: { waitForAck?: boolean }
-                ) => Promise<unknown>;
+      await withTimeout(
+        page.evaluate(
+          async ({ chatId, text }) => {
+            const wpp = (window as unknown as {
+              WPP: {
+                chat: {
+                  sendTextMessage: (
+                    id: string,
+                    msg: string,
+                    options?: { waitForAck?: boolean }
+                  ) => Promise<unknown>;
+                };
               };
-            };
-          }).WPP;
+            }).WPP;
 
-          await wpp.chat.sendTextMessage(chatId, text, { waitForAck: true });
-        },
-        { chatId: phone, text: message }
+            const sendTimeout = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('Envío sin respuesta de WhatsApp')), 40_000);
+            });
+
+            await Promise.race([
+              wpp.chat.sendTextMessage(chatId, text, { waitForAck: true }),
+              sendTimeout,
+            ]);
+          },
+          { chatId: phone, text: message }
+        ),
+        PAGE_ACTION_TIMEOUT_MS,
+        `Envío a ${phone}`
       );
     },
 

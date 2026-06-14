@@ -15,6 +15,17 @@ interface BulkSummary {
   failed: number;
 }
 
+function isNotOnWhatsAppError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('not registered') ||
+    lower.includes('not found') ||
+    lower.includes('invalid wid') ||
+    lower.includes('no lid') ||
+    lower.includes('not exist')
+  );
+}
+
 export async function sendBulkMessages(
   client: WaClient,
   contacts: Contact[],
@@ -37,27 +48,20 @@ export async function sendBulkMessages(
     }
 
     try {
-      log(`Verificando ${phone} (${index}/${total})...`, 'info');
-      const status = await client.checkNumberStatus(phone);
-
-      if (!status.numberExists || !status.wid) {
-        markAsSent(phone, name, 'failed', 'not_on_whatsapp');
-        log(`❌ ${phone} no está en WhatsApp`, 'error');
-        summary.failed++;
-        continue;
-      }
-
       const message = formatMessage(messageTemplate, name);
-      log(`Enviando a ${status.wid}...`, 'info');
-      await client.sendText(status.wid, message);
+      log(`📤 Enviando ${index}/${total} → ${phone}`, 'info');
+      await client.sendText(phone, message);
 
       markAsSent(phone, name, 'success');
-      summary.sent++;
-      log(`📤 Enviado ${index}/${total} - ${phone}`, 'success');
+      log(`✅ Enviado ${index}/${total} - ${phone}`, 'success');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      markAsSent(phone, name, 'failed', errorMessage);
-      log(`❌ Error enviando a ${phone}: ${errorMessage}`, 'error');
+      const status = isNotOnWhatsAppError(errorMessage)
+        ? 'not_on_whatsapp'
+        : errorMessage;
+
+      markAsSent(phone, name, 'failed', status);
+      log(`❌ Error con ${phone}: ${errorMessage}`, 'error');
       summary.failed++;
     }
 
