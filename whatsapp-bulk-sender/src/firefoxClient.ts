@@ -1,4 +1,8 @@
-import waVersion from '@wppconnect/wa-version';
+import {
+  fetchCurrentVersion,
+  getLatestVersion,
+  getPageContent,
+} from '@wppconnect/wa-version';
 import { firefox, BrowserContext, Page } from 'playwright';
 import qrcode from 'qrcode-terminal';
 import path from 'path';
@@ -23,7 +27,7 @@ async function preparePage(page: Page, version: string): Promise<void> {
       return route.fulfill({
         status: 200,
         contentType: 'text/html',
-        body: waVersion.getPageContent(version),
+        body: getPageContent(version),
       });
     }
     return route.continue();
@@ -105,12 +109,26 @@ async function waitForAuthentication(page: Page): Promise<void> {
   );
 }
 
+async function resolveWaWebVersion(): Promise<string> {
+  try {
+    const version = await fetchCurrentVersion();
+    if (version) return version;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`No se pudo obtener versión online de WhatsApp: ${message}`, 'info');
+  }
+
+  const fallback = getLatestVersion();
+  log(`Usando versión local de WhatsApp: ${fallback}`, 'info');
+  return fallback;
+}
+
 export async function createFirefoxClient(): Promise<WaClient> {
   const firefoxPath = findFirefoxExecutable(FIREFOX_PATH);
   log(`Navegador: Firefox (${firefoxPath})`, 'info');
 
   const sessionDir = path.join(SESSION_DATA_PATH, SESSION_NAME);
-  const waWebVersion = (await waVersion.fetchCurrentVersion()) ?? '2.3000.0';
+  const waWebVersion = await resolveWaWebVersion();
 
   const context: BrowserContext = await firefox.launchPersistentContext(sessionDir, {
     headless: HEADLESS,
