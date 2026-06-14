@@ -1,4 +1,4 @@
-const PAGE_ACTION_TIMEOUT_MS = 90_000;
+const PAGE_ACTION_TIMEOUT_MS = 35_000;
 
 export function withTimeout<T>(
   promise: Promise<T>,

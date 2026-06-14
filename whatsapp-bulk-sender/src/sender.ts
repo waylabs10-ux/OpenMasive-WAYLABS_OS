@@ -53,6 +53,7 @@ export async function sendBulkMessages(
       await client.sendText(phone, message);
 
       markAsSent(phone, name, 'success');
+      summary.sent++;
       log(`✅ Enviado ${index}/${total} - ${phone}`, 'success');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

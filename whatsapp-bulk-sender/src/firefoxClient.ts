@@ -236,11 +236,6 @@ export async function createFirefoxClient(): Promise<WaClient> {
           async ({ chatId, text }) => {
             const wpp = (window as unknown as {
               WPP: {
-                contact: {
-                  queryExists: (
-                    id: string
-                  ) => Promise<{ wid?: string | { _serialized?: string } } | null>;
-                };
                 chat: {
                   sendTextMessage: (
                     id: string,
@@ -256,30 +251,22 @@ export async function createFirefoxClient(): Promise<WaClient> {
               };
             }).WPP;
 
-            let targetId = chatId;
-
-            try {
-              const lookup = await Promise.race([
-                wpp.contact.queryExists(chatId),
-                new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000)),
-              ]);
-
-              if (lookup?.wid) {
-                targetId =
-                  typeof lookup.wid === 'string'
-                    ? lookup.wid
-                    : lookup.wid._serialized ?? chatId;
-              }
-            } catch {
-              // usar chatId original
-            }
-
-            const result = await wpp.chat.sendTextMessage(targetId, text, {
-              waitForAck: false,
-              linkPreview: false,
-              markIsRead: false,
-              delay: 1500,
+            const sendTimeout = new Promise<never>((_, reject) => {
+              setTimeout(
+                () => reject(new Error('WhatsApp no respondió al envío')),
+                25_000
+              );
             });
+
+            const result = await Promise.race([
+              wpp.chat.sendTextMessage(chatId, text, {
+                waitForAck: false,
+                linkPreview: false,
+                markIsRead: false,
+                delay: 800,
+              }),
+              sendTimeout,
+            ]);
 
             if (!result?.id) {
               throw new Error('WhatsApp no confirmó el envío del mensaje');
