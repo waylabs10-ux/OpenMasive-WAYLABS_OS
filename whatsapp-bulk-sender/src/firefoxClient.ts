@@ -7,14 +7,13 @@ import qrcode from 'qrcode-terminal';
 import path from 'path';
 import {
   AUTH_TIMEOUT,
-  FIREFOX_PATH,
   log,
   QR_TIMEOUT,
   SESSION_DATA_PATH,
   SESSION_NAME,
 } from './config';
-import { findFirefoxExecutable } from './firefox';
-import { launchFirefoxEsr } from './firefoxLauncher';
+import { ensurePlaywrightFirefox } from './firefox';
+import { launchFirefox } from './firefoxLauncher';
 import { WaClient } from './types';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
@@ -165,13 +164,12 @@ async function waitForAuthentication(page: Page): Promise<void> {
 }
 
 export async function createFirefoxClient(): Promise<WaClient> {
-  const firefoxPath = findFirefoxExecutable(FIREFOX_PATH);
-  log(`Navegador: Firefox (${firefoxPath})`, 'info');
+  ensurePlaywrightFirefox();
 
   const sessionDir = path.join(SESSION_DATA_PATH, SESSION_NAME);
   const waWebVersion = await resolveWaWebVersion();
 
-  const { page, close } = await launchFirefoxEsr(firefoxPath, sessionDir);
+  const { page, close } = await launchFirefox(sessionDir);
   await preparePage(page, waWebVersion);
 
   log('Cargando web.whatsapp.com...', 'info');

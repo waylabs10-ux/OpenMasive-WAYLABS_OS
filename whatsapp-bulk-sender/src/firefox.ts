@@ -1,15 +1,7 @@
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { firefox } from 'playwright';
 
 const BLOCKED_BROWSERS = /chrome|chromium|google-chrome/i;
-
-const LINUX_CANDIDATES = [
-  '/usr/bin/firefox-esr',
-  '/usr/bin/firefox',
-  '/usr/lib/firefox-esr/firefox-esr',
-  '/usr/lib/firefox/firefox',
-  '/snap/bin/firefox',
-];
 
 export function assertFirefoxOnly(): void {
   if (process.env.USE_CHROME === 'true') {
@@ -21,55 +13,39 @@ export function assertFirefoxOnly(): void {
   const chromePath = process.env.CHROME_PATH ?? process.env.CHROMIUM_PATH;
   if (chromePath) {
     throw new Error(
-      'CHROME_PATH/CHROMIUM_PATH no están permitidos. Usa FIREFOX_PATH si necesitas una ruta personalizada.'
+      'CHROME_PATH/CHROMIUM_PATH no están permitidos. Este sistema usa Firefox de Playwright.'
     );
   }
 }
 
-function assertPathIsFirefox(executablePath: string): void {
-  if (BLOCKED_BROWSERS.test(executablePath)) {
-    throw new Error(
-      `Ruta bloqueada (${executablePath}). Solo se permite Firefox.`
-    );
-  }
-}
-
-function tryWhich(command: string): string | null {
-  try {
-    const result = execSync(`which ${command}`, { encoding: 'utf-8' }).trim();
-    return result || null;
-  } catch {
-    return null;
-  }
-}
-
-export function findFirefoxExecutable(customPath?: string): string {
+export function ensurePlaywrightFirefox(): string {
   assertFirefoxOnly();
 
-  if (customPath) {
-    if (!fs.existsSync(customPath)) {
-      throw new Error(`Firefox no encontrado en FIREFOX_PATH: ${customPath}`);
-    }
-    assertPathIsFirefox(customPath);
-    return customPath;
+  if (process.env.FIREFOX_PATH) {
+    logFirefoxPathWarning();
   }
 
-  const fromWhich =
-    tryWhich('firefox-esr') ?? tryWhich('firefox');
-  if (fromWhich) {
-    assertPathIsFirefox(fromWhich);
-    return fromWhich;
+  const executablePath = firefox.executablePath();
+  if (!fs.existsSync(executablePath)) {
+    throw new Error(
+      'Firefox de Playwright no está instalado.\n' +
+        'Ejecuta: npx playwright install firefox\n' +
+        'O desde el proyecto: npm run setup'
+    );
   }
 
-  for (const candidate of LINUX_CANDIDATES) {
-    if (fs.existsSync(candidate)) {
-      assertPathIsFirefox(candidate);
-      return candidate;
-    }
+  if (BLOCKED_BROWSERS.test(executablePath)) {
+    throw new Error(
+      `Ruta bloqueada (${executablePath}). Solo se permite Firefox de Playwright.`
+    );
   }
 
-  throw new Error(
-    'Firefox no encontrado. Instala Firefox ESR o define FIREFOX_PATH en .env\n' +
-      'Ejemplo Parrot/Ubuntu: sudo apt install firefox-esr'
+  return executablePath;
+}
+
+function logFirefoxPathWarning(): void {
+  console.log(
+    '\x1b[33m[aviso] FIREFOX_PATH se ignora. Playwright requiere su propio Firefox ' +
+      '(no funciona con firefox-esr del sistema). Ejecuta: npx playwright install firefox\x1b[0m'
   );
 }

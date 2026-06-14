@@ -2,21 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Browser, BrowserContext, firefox, Page } from 'playwright';
 import { HEADLESS, log } from './config';
-
-const PROFILE_LOCKS = ['lock', '.parentlock', 'parent.lock'];
-
-export function cleanFirefoxProfileLocks(profileDir: string): void {
-  for (const lockName of PROFILE_LOCKS) {
-    const lockPath = path.join(profileDir, lockName);
-    if (!fs.existsSync(lockPath)) continue;
-    try {
-      fs.unlinkSync(lockPath);
-      log(`Lock de perfil eliminado: ${lockName}`, 'info');
-    } catch {
-      // ignore
-    }
-  }
-}
+import { ensurePlaywrightFirefox } from './firefox';
 
 export interface FirefoxLaunchResult {
   browser: Browser;
@@ -25,17 +11,16 @@ export interface FirefoxLaunchResult {
   close: () => Promise<void>;
 }
 
-export async function launchFirefoxEsr(
-  executablePath: string,
-  profileDir: string
-): Promise<FirefoxLaunchResult> {
+export async function launchFirefox(profileDir: string): Promise<FirefoxLaunchResult> {
   fs.mkdirSync(profileDir, { recursive: true });
-  cleanFirefoxProfileLocks(profileDir);
 
+  const firefoxPath = ensurePlaywrightFirefox();
   const storageStatePath = path.join(profileDir, 'storage-state.json');
   const hasStorageState = fs.existsSync(storageStatePath);
 
-  log('Lanzando Firefox con Playwright...', 'info');
+  log(`Navegador: Firefox Playwright`, 'info');
+  log(`Ruta: ${firefoxPath}`, 'info');
+
   if (hasStorageState) {
     log('Restaurando sesión guardada...', 'info');
   }
@@ -47,14 +32,8 @@ export async function launchFirefoxEsr(
   let browser: Browser;
   try {
     browser = await firefox.launch({
-      executablePath,
       headless: HEADLESS,
       timeout: 90_000,
-      args: ['-no-remote'],
-      firefoxUserPrefs: {
-        'media.navigator.permission.disabled': true,
-        'dom.webnotifications.enabled': false,
-      },
     });
   } finally {
     clearInterval(launchHeartbeat);
@@ -81,7 +60,7 @@ export async function launchFirefoxEsr(
       try {
         await context.storageState({ path: storageStatePath });
       } catch {
-        // ignore save errors
+        // ignore
       }
       try {
         await browser.close();

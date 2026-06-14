@@ -6,7 +6,9 @@
   "scripts": {
     "start": "ts-node src/index.ts",
     "build": "tsc",
-    "start:prod": "node dist/index.js"
+    "start:prod": "node dist/index.js",
+    "setup": "npx playwright install firefox",
+    "postinstall": "npx playwright install firefox"
   },
   "dependencies": {
     "@wppconnect/wa-js": "^3.19.3",

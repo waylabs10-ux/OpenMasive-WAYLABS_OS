@@ -1,18 +1,21 @@
 # WhatsApp Bulk Sender (solo Firefox)
 
-Sistema de envío masivo de WhatsApp con Node.js + TypeScript, **exclusivamente con Firefox**, rate limiting aleatorio y tracking local con SQLite.
+Sistema de envío masivo de WhatsApp con **Firefox** (vía Playwright), rate limiting y tracking SQLite.
 
 ## Requisitos
 
 - Node.js 18+
-- **Firefox** o **Firefox ESR** instalado (Parrot OS ya lo incluye)
-- Chrome y Chromium están **bloqueados** — el sistema no los usará
+- Firefox de Playwright (se instala automáticamente con `npm install`)
+- Chrome y Chromium están **bloqueados**
+
+> **Importante:** Playwright **no puede** automatizar `firefox-esr` del sistema (Parrot/Ubuntu). Usa su propio Firefox (motor Gecko real, parcheado para automatización). Esto es una limitación de Playwright, no del proyecto.
 
 ## Instalación
 
 ```bash
 cd whatsapp-bulk-sender
 npm install
+npm run setup    # por si falló el postinstall
 cp .env.example .env
 ```
 
@@ -40,106 +43,53 @@ npm start
 
 ### 4. Escanear QR
 
-- Se abre **Firefox** con WhatsApp Web
-- También aparece el QR en la terminal
-- En el teléfono: **Configuración → Dispositivos vinculados → Vincular dispositivo**
+- Se abre **Firefox** (Playwright)
+- Aparece el QR en la terminal
+- WhatsApp → **Dispositivos vinculados** → escanear
 
 ## Configuración (`.env`)
 
 ```env
 SESSION_NAME=bulk-sender
-HEADLESS=false          # true = Firefox sin ventana
-FIREFOX_PATH=/usr/bin/firefox-esr   # opcional
-QR_TIMEOUT=0            # 0 = esperar indefinidamente
+HEADLESS=false
+QR_TIMEOUT=0
 DELAY_MIN_MS=8000
 DELAY_MAX_MS=20000
 ```
-
-## Detección automática de Firefox
-
-El sistema busca en este orden:
-
-1. `FIREFOX_PATH` del `.env`
-2. `which firefox-esr` / `which firefox`
-3. `/usr/bin/firefox-esr`, `/usr/bin/firefox`, etc.
-
-## Stack
-
-| Componente | Tecnología |
-|------------|------------|
-| Navegador | Firefox (Playwright) |
-| WhatsApp API | @wppconnect/wa-js |
-| Base de datos | SQLite (better-sqlite3) |
-| Contactos | CSV (papaparse) |
 
 ## Scripts
 
 | Comando | Descripción |
 |---------|-------------|
-| `npm start` | Desarrollo con ts-node |
-| `npm run build` | Compila a `dist/` |
-| `npm run start:prod` | Ejecuta compilado |
+| `npm install` | Instala deps + Firefox de Playwright |
+| `npm run setup` | Reinstala Firefox de Playwright |
+| `npm start` | Ejecutar envío masivo |
+| `npm run build` | Compilar TypeScript |
 
 ## Solución de problemas
 
-### Se queda en "Conectando Playwright..."
-
-Eso ya no debería ocurrir. Actualiza con `git pull` — ahora usa `firefox.launch()` directo, sin WebSocket.
-
-### Se queda "pegado" sin hacer nada
-
-1. **Actualiza el código:**
-   ```bash
-   git pull origin main
-   cd whatsapp-bulk-sender
-   npm install
-   ```
-
-2. **Borra sesión anterior y cierra Firefox:**
-   ```bash
-   pkill -f firefox-esr || true
-   rm -rf sessions/bulk-sender
-   ```
-
-3. **Asegúrate de tener en `.env`:**
-   ```env
-   HEADLESS=false
-   FIREFOX_PATH=/usr/bin/firefox-esr
-   ```
-
-4. **Ejecuta y observa los pasos en consola:**
-   ```
-   Abriendo Firefox...
-   Cargando web.whatsapp.com...
-   Cargando librería de WhatsApp (WPP)...
-   Esperando escaneo del QR...
-   ```
-
-5. Si ves `Aún esperando QR...` cada 15s → **es normal**, escanea el QR en Firefox o en la terminal.
-
-6. Si se queda antes de "Cargando librería WPP", revisa que Firefox abra la ventana (no uses headless la primera vez).
-
-### "Firefox no encontrado"
+### Error: "Firefox de Playwright no está instalado"
 
 ```bash
-sudo apt install firefox-esr
-# o define la ruta:
-echo "FIREFOX_PATH=/usr/bin/firefox-esr" >> .env
+npx playwright install firefox
+# o
+npm run setup
 ```
 
-### Se queda esperando en el QR
+### Error: "Failed to launch" con firefox-esr del sistema
 
-- Asegúrate de tener `HEADLESS=false` en `.env`
-- Escanea el QR que aparece en la terminal o en la ventana de Firefox
-- Borra sesión anterior si falló: `rm -rf sessions/*`
+No uses `FIREFOX_PATH=/usr/bin/firefox-esr`. Eso no funciona con Playwright. Ejecuta `npm run setup`.
 
-### Error de sesión corrupta
+### Se queda esperando QR
 
 ```bash
+pkill -f firefox || true
 rm -rf sessions/bulk-sender
 npm start
 ```
 
+Asegúrate de tener `HEADLESS=false` en `.env`.
+
 ## Advertencia
 
-El envío masivo puede violar los términos de WhatsApp. Usa solo con contactos que hayan dado consentimiento.
+Usa solo con contactos que hayan dado consentimiento. El envío masivo puede violar los términos de WhatsApp.
