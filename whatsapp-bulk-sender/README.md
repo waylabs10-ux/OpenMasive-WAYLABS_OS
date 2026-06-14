@@ -91,8 +91,9 @@ El sistema busca en este orden:
    npm install
    ```
 
-2. **Borra sesión anterior corrupta:**
+2. **Borra sesión anterior y cierra Firefox:**
    ```bash
+   pkill -f firefox-esr || true
    rm -rf sessions/bulk-sender
    ```
 

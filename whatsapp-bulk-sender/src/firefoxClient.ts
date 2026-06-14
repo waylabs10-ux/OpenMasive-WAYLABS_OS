@@ -1,21 +1,20 @@
 import {
-  fetchCurrentVersion,
   getLatestVersion,
   getPageContent,
 } from '@wppconnect/wa-version';
-import { firefox, BrowserContext, Page } from 'playwright';
+import { Page } from 'playwright';
 import qrcode from 'qrcode-terminal';
 import path from 'path';
 import {
   AUTH_TIMEOUT,
   FIREFOX_PATH,
-  HEADLESS,
   log,
   QR_TIMEOUT,
   SESSION_DATA_PATH,
   SESSION_NAME,
 } from './config';
 import { findFirefoxExecutable } from './firefox';
+import { launchFirefoxEsr } from './firefoxLauncher';
 import { WaClient } from './types';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
@@ -33,27 +32,7 @@ function resolveBundledVersion(): string {
 
 async function resolveWaWebVersion(): Promise<string> {
   const bundled = resolveBundledVersion();
-
-  try {
-    const online = await fetchCurrentVersion();
-    if (online) {
-      try {
-        getPageContent(online);
-        log(`Versión WhatsApp: ${online}`, 'info');
-        return online;
-      } catch {
-        log(
-          `Versión online ${online} no está en el paquete. Usando ${bundled}`,
-          'info'
-        );
-      }
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log(`No se pudo consultar versión online: ${message}`, 'info');
-  }
-
-  log(`Versión WhatsApp local: ${bundled}`, 'info');
+  log(`Versión WhatsApp: ${bundled}`, 'info');
   return bundled;
 }
 
@@ -192,22 +171,7 @@ export async function createFirefoxClient(): Promise<WaClient> {
   const sessionDir = path.join(SESSION_DATA_PATH, SESSION_NAME);
   const waWebVersion = await resolveWaWebVersion();
 
-  log('Abriendo Firefox...', 'info');
-  const context: BrowserContext = await firefox.launchPersistentContext(sessionDir, {
-    headless: HEADLESS,
-    executablePath: firefoxPath,
-    viewport: { width: 1440, height: 900 },
-    locale: 'es-CO',
-    ignoreHTTPSErrors: true,
-    firefoxUserPrefs: {
-      'media.navigator.permission.disabled': true,
-      'dom.webnotifications.enabled': false,
-    },
-    userAgent:
-      'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
-  });
-
-  const page = context.pages()[0] ?? (await context.newPage());
+  const { page, close } = await launchFirefoxEsr(firefoxPath, sessionDir);
   await preparePage(page, waWebVersion);
 
   log('Cargando web.whatsapp.com...', 'info');
@@ -249,7 +213,7 @@ export async function createFirefoxClient(): Promise<WaClient> {
     },
 
     async kill(): Promise<void> {
-      await context.close();
+      await close();
     },
   };
 }
