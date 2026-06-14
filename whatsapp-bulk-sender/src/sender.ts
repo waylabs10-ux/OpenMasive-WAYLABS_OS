@@ -50,11 +50,17 @@ export async function sendBulkMessages(
     try {
       const message = formatMessage(messageTemplate, name);
       log(`📤 Enviando ${index}/${total} → ${phone}`, 'info');
-      await client.sendText(phone, message);
+      const result = await client.sendText(phone, message);
 
       markAsSent(phone, name, 'success');
       summary.sent++;
-      log(`✅ Enviado ${index}/${total} - ${phone}`, 'success');
+      log(
+        `✅ Enviado ${index}/${total} - ${phone} (ack=${result.ack}, id=${result.messageId})`,
+        'success'
+      );
+      if (result.to) {
+        log(`   Destino confirmado por WhatsApp: ${result.to}`, 'info');
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       const status = isNotOnWhatsAppError(errorMessage)

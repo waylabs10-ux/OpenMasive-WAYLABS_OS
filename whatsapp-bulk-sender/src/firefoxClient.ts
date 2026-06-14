@@ -15,7 +15,7 @@ import {
 import { ensurePlaywrightFirefox } from './firefox';
 import { launchFirefox } from './firefoxLauncher';
 import { PAGE_ACTION_TIMEOUT_MS, withTimeout } from './timeouts';
-import { WaClient } from './types';
+import { SendResult, WaClient } from './types';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
 const WA_JS_PATH = require.resolve('@wppconnect/wa-js');
@@ -230,8 +230,8 @@ export async function createFirefoxClient(): Promise<WaClient> {
       }
     },
 
-    async sendText(phone: string, message: string): Promise<void> {
-      await withTimeout(
+    async sendText(phone: string, message: string): Promise<SendResult> {
+      return withTimeout(
         page.evaluate(
           async ({ chatId, text }) => {
             const wpp = (window as unknown as {
@@ -246,33 +246,54 @@ export async function createFirefoxClient(): Promise<WaClient> {
                       markIsRead?: boolean;
                       delay?: number;
                     }
-                  ) => Promise<{ id?: string }>;
+                  ) => Promise<{
+                    id?: string;
+                    ack?: number;
+                    to?: string;
+                    from?: string;
+                  }>;
+                  getMessageById: (id: string) => Promise<{ id?: string; body?: string; ack?: number }>;
                 };
               };
             }).WPP;
 
-            const sendTimeout = new Promise<never>((_, reject) => {
+            const ackTimeout = new Promise<never>((_, reject) => {
               setTimeout(
-                () => reject(new Error('WhatsApp no respondió al envío')),
-                25_000
+                () => reject(new Error('WhatsApp no confirmó el envío (sin ACK)')),
+                50_000
               );
             });
 
             const result = await Promise.race([
               wpp.chat.sendTextMessage(chatId, text, {
-                waitForAck: false,
+                waitForAck: true,
                 linkPreview: false,
                 markIsRead: false,
-                delay: 800,
+                delay: 1000,
               }),
-              sendTimeout,
+              ackTimeout,
             ]);
 
             if (!result?.id) {
-              throw new Error('WhatsApp no confirmó el envío del mensaje');
+              throw new Error('WhatsApp no devolvió ID de mensaje');
             }
 
-            return result.id;
+            if ((result.ack ?? 0) < 1) {
+              throw new Error(
+                `WhatsApp no confirmó el envío (ack=${result.ack ?? 0})`
+              );
+            }
+
+            const stored = await wpp.chat.getMessageById(result.id);
+            if (!stored?.id) {
+              throw new Error('El mensaje no apareció en el chat');
+            }
+
+            return {
+              messageId: result.id,
+              ack: result.ack ?? stored.ack ?? 0,
+              to: result.to,
+            };
           },
           { chatId: phone, text: message }
         ),
