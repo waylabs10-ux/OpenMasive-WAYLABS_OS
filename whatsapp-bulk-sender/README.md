@@ -17,6 +17,9 @@
 
 </div>
 
+> **Repositorio oficial (nuevo):** [github.com/waylabs10-ux/whatsapp-bulk-sender](https://github.com/waylabs10-ux/whatsapp-bulk-sender)  
+> Clona ese repo para trabajar. Esta copia dentro del monorepo es solo referencia.
+
 ---
 
 ## ¿Qué es esto?
