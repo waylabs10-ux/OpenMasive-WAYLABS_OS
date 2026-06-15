@@ -24,6 +24,12 @@ function simplifyError(message: string): string {
     return 'WhatsApp no confirmó el envío';
   }
   if (
+    firstLine.toLowerCase().includes('lid is missing') ||
+    firstLine.toLowerCase().includes('missing in chat table')
+  ) {
+    return 'Contacto con WhatsApp Business/LID: no se pudo resolver el ID';
+  }
+  if (
     firstLine.includes('execution context was destroyed') ||
     firstLine.includes('wpp is undefined') ||
     firstLine.includes("can't access property")
@@ -89,6 +95,9 @@ export async function sendBulkMessages(
       );
       if (result.to) {
         log(`   Destino confirmado por WhatsApp: ${result.to}`, 'info');
+      }
+      if (result.isBusiness) {
+        log(`   Contacto WhatsApp Business (ID: ${result.resolvedId ?? phone})`, 'info');
       }
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err);

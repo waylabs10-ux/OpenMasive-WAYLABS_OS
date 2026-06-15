@@ -180,12 +180,26 @@ async function evaluateSend(
       const sleep = (ms: number) =>
         new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+      type WidLike = string | { _serialized?: string };
+
+      const serializeWid = (wid?: WidLike | null): string => {
+        if (!wid) return '';
+        return typeof wid === 'string' ? wid : wid._serialized ?? '';
+      };
+
       const wpp = (window as unknown as {
         WPP: {
           contact: {
-            queryExists: (
-              id: string
-            ) => Promise<{ wid?: string | { _serialized?: string } } | null>;
+            queryExists: (id: string) => Promise<{
+              wid?: WidLike;
+              lid?: WidLike;
+              biz?: boolean;
+            } | null>;
+            getPnLidEntry: (id: string) => Promise<{
+              lid?: { _serialized?: string };
+              phoneNumber?: { _serialized?: string };
+              contact?: { isBusiness?: boolean };
+            }>;
           };
           chat: {
             find: (id: string) => Promise<unknown>;
@@ -212,41 +226,115 @@ async function evaluateSend(
         throw new Error('WPP no disponible en la página');
       }
 
-      let targetId = chatId;
+      const resolveTarget = async (): Promise<{
+        targetId: string;
+        alternateId: string | null;
+        isBusiness: boolean;
+      }> => {
+        let targetId = chatId;
+        let alternateId: string | null = null;
+        let isBusiness = false;
 
-      const lookup = await Promise.race([
-        wpp.contact.queryExists(chatId).catch(() => null),
-        new Promise<'timeout'>((resolve) =>
-          setTimeout(() => resolve('timeout'), 6_000)
-        ),
-      ]);
+        const lookup = await Promise.race([
+          wpp.contact.queryExists(chatId).catch(() => null),
+          new Promise<'timeout'>((resolve) =>
+            setTimeout(() => resolve('timeout'), 15_000)
+          ),
+        ]);
 
-      if (lookup !== 'timeout' && lookup?.wid) {
-        targetId =
-          typeof lookup.wid === 'string'
-            ? lookup.wid
-            : lookup.wid._serialized ?? chatId;
-      }
+        if (lookup !== 'timeout' && lookup) {
+          const resolvedWid = serializeWid(lookup.wid);
+          if (resolvedWid) {
+            targetId = resolvedWid;
+          }
 
-      await wpp.chat.find(targetId);
+          const resolvedLid = serializeWid(lookup.lid);
+          if (resolvedLid && resolvedLid !== targetId) {
+            alternateId = resolvedLid;
+          }
+
+          isBusiness = Boolean(lookup.biz);
+        } else {
+          const entry = await Promise.race([
+            wpp.contact.getPnLidEntry(chatId).catch(() => null),
+            new Promise<'timeout'>((resolve) =>
+              setTimeout(() => resolve('timeout'), 10_000)
+            ),
+          ]);
+
+          if (entry !== 'timeout' && entry) {
+            const resolvedLid = entry.lid?._serialized ?? '';
+            const resolvedPhone = entry.phoneNumber?._serialized ?? '';
+
+            if (resolvedLid) {
+              targetId = resolvedLid;
+              alternateId = resolvedPhone || null;
+            } else if (resolvedPhone) {
+              targetId = resolvedPhone;
+            }
+
+            isBusiness = Boolean(entry.contact?.isBusiness);
+          }
+        }
+
+        await wpp.chat.find(targetId).catch(() => null);
+        if (alternateId) {
+          await wpp.chat.find(alternateId).catch(() => null);
+        }
+
+        return { targetId, alternateId, isBusiness };
+      };
+
+      const isLidRelatedError = (error: unknown): boolean => {
+        const message = String(
+          error instanceof Error ? error.message : error
+        ).toLowerCase();
+        return (
+          message.includes('lid is missing') ||
+          message.includes('missing in chat table') ||
+          message.includes('no lid') ||
+          message.includes('invariant')
+        );
+      };
+
+      const sendWithAck = async (targetId: string) => {
+        const ackTimeout = new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error('WhatsApp no confirmó el envío (sin ACK)')),
+            60_000
+          );
+        });
+
+        return Promise.race([
+          wpp.chat.sendTextMessage(targetId, text, {
+            waitForAck: true,
+            linkPreview: false,
+            markIsRead: false,
+            delay: 1200,
+          }),
+          ackTimeout,
+        ]);
+      };
+
+      const { targetId: initialTarget, alternateId, isBusiness } =
+        await resolveTarget();
+      let activeTargetId = initialTarget;
+
       await sleep(800);
 
-      const ackTimeout = new Promise<never>((_, reject) => {
-        setTimeout(
-          () => reject(new Error('WhatsApp no confirmó el envío (sin ACK)')),
-          60_000
-        );
-      });
-
-      const result = await Promise.race([
-        wpp.chat.sendTextMessage(targetId, text, {
-          waitForAck: true,
-          linkPreview: false,
-          markIsRead: false,
-          delay: 1200,
-        }),
-        ackTimeout,
-      ]);
+      let result;
+      try {
+        result = await sendWithAck(activeTargetId);
+      } catch (err) {
+        if (alternateId && isLidRelatedError(err)) {
+          await wpp.chat.find(alternateId).catch(() => null);
+          await sleep(500);
+          activeTargetId = alternateId;
+          result = await sendWithAck(activeTargetId);
+        } else {
+          throw err;
+        }
+      }
 
       if (!result?.id) {
         throw new Error('WhatsApp no devolvió ID de mensaje');
@@ -274,7 +362,9 @@ async function evaluateSend(
           return {
             messageId: result.id,
             ack: storedAck,
-            to: result.to ?? targetId,
+            to: result.to ?? activeTargetId,
+            isBusiness,
+            resolvedId: activeTargetId,
           };
         }
         await sleep(800);
@@ -283,7 +373,9 @@ async function evaluateSend(
       return {
         messageId: result.id,
         ack: storedAck,
-        to: result.to ?? targetId,
+        to: result.to ?? activeTargetId,
+        isBusiness,
+        resolvedId: activeTargetId,
       };
     },
     { chatId: phone, text: message }
@@ -302,7 +394,9 @@ function isRecoverableSendError(message: string): boolean {
     lower.includes('no devolvió id') ||
     lower.includes('no apareció en el chat') ||
     lower.includes('tiempo agotado') ||
-    lower.includes('timeout')
+    lower.includes('lid is missing') ||
+    lower.includes('missing in chat table') ||
+    lower.includes('no lid')
   );
 }
 
