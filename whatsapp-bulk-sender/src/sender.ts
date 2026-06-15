@@ -23,6 +23,19 @@ function simplifyError(message: string): string {
   if (firstLine.includes('sin ACK')) {
     return 'WhatsApp no confirmó el envío';
   }
+  if (
+    firstLine.toLowerCase().includes('lid is missing') ||
+    firstLine.toLowerCase().includes('missing in chat table')
+  ) {
+    return 'Contacto con WhatsApp Business/LID: no se pudo resolver el ID';
+  }
+  if (
+    firstLine.includes('execution context was destroyed') ||
+    firstLine.includes('wpp is undefined') ||
+    firstLine.includes("can't access property")
+  ) {
+    return 'Sesión de WhatsApp interrumpida (reintenta el envío)';
+  }
   return firstLine.length > 180 ? `${firstLine.slice(0, 180)}...` : firstLine;
 }
 
@@ -46,8 +59,17 @@ export async function sendBulkMessages(
 ): Promise<BulkSummary> {
   const total = contacts.length;
   const summary: BulkSummary = { sent: 0, skipped: 0, failed: 0 };
+  const pending = contacts.filter((contact) => !isAlreadySent(contact.phone)).length;
+  const alreadySent = total - pending;
 
   log(`Iniciando envío masivo a ${total} contactos...`, 'info');
+  if (alreadySent > 0) {
+    log(
+      `${alreadySent} contacto(s) ya enviados previamente serán omitidos. Borra data/sent.db para reenviar a todos.`,
+      'skip'
+    );
+  }
+  log(`${pending} contacto(s) pendientes por enviar.`, 'info');
   await client.waitUntilReady();
 
   for (let i = 0; i < contacts.length; i++) {
@@ -73,6 +95,9 @@ export async function sendBulkMessages(
       );
       if (result.to) {
         log(`   Destino confirmado por WhatsApp: ${result.to}`, 'info');
+      }
+      if (result.isBusiness) {
+        log(`   Contacto WhatsApp Business (ID: ${result.resolvedId ?? phone})`, 'info');
       }
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err);

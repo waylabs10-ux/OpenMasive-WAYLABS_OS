@@ -1,7 +1,21 @@
 {
   "name": "whatsapp-bulk-sender",
-  "version": "1.1.0",
-  "description": "Sistema de envío masivo de WhatsApp con Firefox, rate limiting y tracking SQLite",
+  "version": "1.2.0",
+  "description": "WAYLABS OS — Envío masivo de WhatsApp con Firefox, rate limiting y tracking SQLite",
+  "author": "DRANDIGITAL S.a.s",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/waylabs10-ux/whatsapp-bulk-sender.git"
+  },
+  "keywords": [
+    "whatsapp",
+    "bulk-sender",
+    "waylabs-os",
+    "firefox",
+    "playwright",
+    "wppconnect"
+  ],
   "main": "dist/index.js",
   "scripts": {
     "start": "ts-node src/index.ts",
