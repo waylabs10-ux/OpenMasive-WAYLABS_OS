@@ -25,9 +25,10 @@ function simplifyError(message: string): string {
   }
   if (
     firstLine.toLowerCase().includes('lid is missing') ||
-    firstLine.toLowerCase().includes('missing in chat table')
+    firstLine.toLowerCase().includes('missing in chat table') ||
+    firstLine.toLowerCase().includes('no lid for user')
   ) {
-    return 'Contacto con WhatsApp Business/LID: no se pudo resolver el ID';
+    return 'Contacto sin LID en WhatsApp (intenta agregar el número a tus contactos)';
   }
   if (
     firstLine.includes('execution context was destroyed') ||

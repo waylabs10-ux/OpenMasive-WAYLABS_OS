@@ -229,62 +229,58 @@ async function evaluateSend(
       }
 
       const resolveTarget = async (): Promise<{
-        targetId: string;
-        alternateId: string | null;
+        candidateIds: string[];
         isBusiness: boolean;
       }> => {
-        let targetId = chatId;
-        let alternateId: string | null = null;
+        const candidateIds: string[] = [];
         let isBusiness = false;
+
+        const addCandidate = (id?: string | null) => {
+          if (!id || candidateIds.includes(id)) return;
+          candidateIds.push(id);
+        };
 
         const lookup = await Promise.race([
           wpp.contact.queryExists(chatId).catch(() => null),
+          new Promise<'timeout'>((resolve) =>
+            setTimeout(() => resolve('timeout'), 20_000)
+          ),
+        ]);
+
+        if (lookup !== 'timeout' && lookup) {
+          const resolvedLid = serializeWid(lookup.lid);
+          const resolvedWid = serializeWid(lookup.wid);
+          addCandidate(resolvedLid);
+          addCandidate(resolvedWid);
+          isBusiness = Boolean(lookup.biz);
+        }
+
+        const entry = await Promise.race([
+          wpp.contact.getPnLidEntry(chatId).catch(() => null),
           new Promise<'timeout'>((resolve) =>
             setTimeout(() => resolve('timeout'), 15_000)
           ),
         ]);
 
-        if (lookup !== 'timeout' && lookup) {
-          const resolvedWid = serializeWid(lookup.wid);
-          if (resolvedWid) {
-            targetId = resolvedWid;
-          }
-
-          const resolvedLid = serializeWid(lookup.lid);
-          if (resolvedLid && resolvedLid !== targetId) {
-            alternateId = resolvedLid;
-          }
-
-          isBusiness = Boolean(lookup.biz);
-        } else {
-          const entry = await Promise.race([
-            wpp.contact.getPnLidEntry(chatId).catch(() => null),
-            new Promise<'timeout'>((resolve) =>
-              setTimeout(() => resolve('timeout'), 10_000)
-            ),
-          ]);
-
-          if (entry !== 'timeout' && entry) {
-            const resolvedLid = entry.lid?._serialized ?? '';
-            const resolvedPhone = entry.phoneNumber?._serialized ?? '';
-
-            if (resolvedLid) {
-              targetId = resolvedLid;
-              alternateId = resolvedPhone || null;
-            } else if (resolvedPhone) {
-              targetId = resolvedPhone;
-            }
-
-            isBusiness = Boolean(entry.contact?.isBusiness);
-          }
+        if (entry !== 'timeout' && entry) {
+          addCandidate(entry.lid?._serialized);
+          addCandidate(entry.phoneNumber?._serialized);
+          isBusiness = isBusiness || Boolean(entry.contact?.isBusiness);
         }
 
-        await wpp.chat.find(targetId).catch(() => null);
-        if (alternateId) {
-          await wpp.chat.find(alternateId).catch(() => null);
+        addCandidate(chatId);
+
+        const ordered = [
+          ...candidateIds.filter((id) => id.endsWith('@lid')),
+          ...candidateIds.filter((id) => !id.endsWith('@lid')),
+        ];
+
+        for (const id of ordered) {
+          await wpp.chat.find(id).catch(() => null);
+          await sleep(400);
         }
 
-        return { targetId, alternateId, isBusiness };
+        return { candidateIds: ordered, isBusiness };
       };
 
       const isLidRelatedError = (error: unknown): boolean => {
@@ -294,7 +290,10 @@ async function evaluateSend(
         return (
           message.includes('lid is missing') ||
           message.includes('missing in chat table') ||
+          message.includes('no lid for user') ||
           message.includes('no lid') ||
+          message.includes('account lid not provided') ||
+          message.includes('remote id is not same') ||
           message.includes('invariant')
         );
       };
@@ -318,24 +317,38 @@ async function evaluateSend(
         ]);
       };
 
-      const { targetId: initialTarget, alternateId, isBusiness } =
-        await resolveTarget();
-      let activeTargetId = initialTarget;
+      const { candidateIds, isBusiness } = await resolveTarget();
+      let activeTargetId = candidateIds[0] ?? chatId;
 
       await sleep(800);
 
-      let result;
-      try {
-        result = await sendWithAck(activeTargetId);
-      } catch (err) {
-        if (alternateId && isLidRelatedError(err)) {
-          await wpp.chat.find(alternateId).catch(() => null);
+      let result: {
+        id?: string;
+        ack?: number;
+        to?: string;
+      } | undefined;
+      let lastError: unknown = null;
+
+      for (const targetId of candidateIds) {
+        try {
+          result = await sendWithAck(targetId);
+          activeTargetId = targetId;
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (!isLidRelatedError(err)) {
+            throw err;
+          }
+          await wpp.chat.find(targetId).catch(() => null);
           await sleep(500);
-          activeTargetId = alternateId;
-          result = await sendWithAck(activeTargetId);
-        } else {
-          throw err;
         }
+      }
+
+      if (!result) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error('No se pudo enviar: contacto sin LID válido en WhatsApp');
       }
 
       if (!result?.id) {
@@ -398,7 +411,9 @@ function isRecoverableSendError(message: string): boolean {
     lower.includes('tiempo agotado') ||
     lower.includes('lid is missing') ||
     lower.includes('missing in chat table') ||
-    lower.includes('no lid')
+    lower.includes('no lid for user') ||
+    lower.includes('no lid') ||
+    lower.includes('account lid not provided')
   );
 }
 
