@@ -131,6 +131,135 @@ async function waitForMainReady(page: Page): Promise<void> {
   log('WhatsApp sincronizado. Listo para enviar.', 'success');
 }
 
+async function ensureWppSession(page: Page): Promise<void> {
+  const healthy = await page
+    .evaluate(() => {
+      const wpp = (window as unknown as {
+        WPP?: { isReady?: boolean; conn?: { isMainReady?: () => boolean } };
+      }).WPP;
+      return Boolean(wpp?.isReady && wpp.conn?.isMainReady?.());
+    })
+    .catch(() => false);
+
+  if (healthy) return;
+
+  log('Reconectando librería WPP tras recarga de WhatsApp...', 'info');
+  await waitMs(2000);
+  await injectWaJs(page);
+  await waitForWppReady(page);
+  await waitForMainReady(page);
+}
+
+async function evaluateSend(
+  page: Page,
+  phone: string,
+  message: string
+): Promise<SendResult> {
+  return page.evaluate(
+    async ({ chatId, text }) => {
+      const wpp = (window as unknown as {
+        WPP: {
+          contact: {
+            queryExists: (
+              id: string
+            ) => Promise<{ wid?: string | { _serialized?: string } } | null>;
+          };
+          chat: {
+            find: (id: string) => Promise<unknown>;
+            sendTextMessage: (
+              id: string,
+              msg: string,
+              options?: {
+                waitForAck?: boolean;
+                linkPreview?: boolean;
+                markIsRead?: boolean;
+                delay?: number;
+              }
+            ) => Promise<{
+              id?: string;
+              ack?: number;
+              to?: string;
+            }>;
+            getMessageById: (id: string) => Promise<{ id?: string; ack?: number }>;
+          };
+        };
+      }).WPP;
+
+      if (!wpp) {
+        throw new Error('WPP no disponible en la página');
+      }
+
+      let targetId = chatId;
+
+      const lookup = await Promise.race([
+        wpp.contact.queryExists(chatId),
+        new Promise<'timeout'>((resolve) =>
+          setTimeout(() => resolve('timeout'), 5_000)
+        ),
+      ]);
+
+      if (lookup !== 'timeout') {
+        if (!lookup?.wid) {
+          throw new Error('Número no registrado en WhatsApp');
+        }
+        targetId =
+          typeof lookup.wid === 'string'
+            ? lookup.wid
+            : lookup.wid._serialized ?? chatId;
+      }
+
+      await wpp.chat.find(targetId);
+
+      const ackTimeout = new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error('WhatsApp no confirmó el envío (sin ACK)')),
+          45_000
+        );
+      });
+
+      const result = await Promise.race([
+        wpp.chat.sendTextMessage(targetId, text, {
+          waitForAck: true,
+          linkPreview: false,
+          markIsRead: false,
+          delay: 800,
+        }),
+        ackTimeout,
+      ]);
+
+      if (!result?.id) {
+        throw new Error('WhatsApp no devolvió ID de mensaje');
+      }
+
+      if ((result.ack ?? 0) < 1) {
+        throw new Error(`WhatsApp no confirmó el envío (ack=${result.ack ?? 0})`);
+      }
+
+      const stored = await wpp.chat.getMessageById(result.id);
+      if (!stored?.id) {
+        throw new Error('El mensaje no apareció en el chat');
+      }
+
+      return {
+        messageId: result.id,
+        ack: result.ack ?? stored.ack ?? 0,
+        to: result.to ?? targetId,
+      };
+    },
+    { chatId: phone, text: message }
+  );
+}
+
+function isRecoverableSendError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('execution context was destroyed') ||
+    lower.includes('wpp no disponible') ||
+    lower.includes('wpp is undefined') ||
+    lower.includes("can't access property")
+  );
+}
+
 async function waitForAuthentication(page: Page): Promise<void> {
   await page.exposeFunction('qrChanged', (qr: string) => {
     const code = qr.split(',')[0];
@@ -231,105 +360,21 @@ export async function createFirefoxClient(): Promise<WaClient> {
     },
 
     async sendText(phone: string, message: string): Promise<SendResult> {
-      return withTimeout(
-        page.evaluate(
-          async ({ chatId, text }) => {
-            const wpp = (window as unknown as {
-              WPP: {
-                contact: {
-                  queryExists: (
-                    id: string
-                  ) => Promise<{ wid?: string | { _serialized?: string } } | null>;
-                };
-                chat: {
-                  find: (id: string) => Promise<{ id?: { _serialized?: string } }>;
-                  openChatBottom: (id: string) => Promise<boolean>;
-                  sendTextMessage: (
-                    id: string,
-                    msg: string,
-                    options?: {
-                      waitForAck?: boolean;
-                      linkPreview?: boolean;
-                      markIsRead?: boolean;
-                      delay?: number;
-                    }
-                  ) => Promise<{
-                    id?: string;
-                    ack?: number;
-                    to?: string;
-                    from?: string;
-                  }>;
-                  getMessageById: (id: string) => Promise<{ id?: string; body?: string; ack?: number }>;
-                };
-              };
-            }).WPP;
+      const attemptSend = () =>
+        withTimeout(evaluateSend(page, phone, message), PAGE_ACTION_TIMEOUT_MS, `Envío a ${phone}`);
 
-            let targetId = chatId;
+      try {
+        return await attemptSend();
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        if (!isRecoverableSendError(errorMessage)) {
+          throw err;
+        }
 
-            const lookup = await Promise.race([
-              wpp.contact.queryExists(chatId),
-              new Promise<'timeout'>((resolve) =>
-                setTimeout(() => resolve('timeout'), 6_000)
-              ),
-            ]);
-
-            if (lookup === 'timeout') {
-              // continuar con el id original
-            } else if (!lookup?.wid) {
-              throw new Error('Número no registrado en WhatsApp');
-            } else {
-              targetId =
-                typeof lookup.wid === 'string'
-                  ? lookup.wid
-                  : lookup.wid._serialized ?? chatId;
-            }
-
-            await wpp.chat.find(targetId);
-            await wpp.chat.openChatBottom(targetId).catch(() => false);
-
-            const ackTimeout = new Promise<never>((_, reject) => {
-              setTimeout(
-                () => reject(new Error('WhatsApp no confirmó el envío (sin ACK)')),
-                50_000
-              );
-            });
-
-            const result = await Promise.race([
-              wpp.chat.sendTextMessage(targetId, text, {
-                waitForAck: true,
-                linkPreview: false,
-                markIsRead: false,
-                delay: 1000,
-              }),
-              ackTimeout,
-            ]);
-
-            if (!result?.id) {
-              throw new Error('WhatsApp no devolvió ID de mensaje');
-            }
-
-            if ((result.ack ?? 0) < 1) {
-              throw new Error(
-                `WhatsApp no confirmó el envío (ack=${result.ack ?? 0})`
-              );
-            }
-
-            const stored = await wpp.chat.getMessageById(result.id);
-            if (!stored?.id) {
-              throw new Error('El mensaje no apareció en el chat');
-            }
-
-            return {
-              messageId: result.id,
-              ack: result.ack ?? stored.ack ?? 0,
-              to: result.to ?? targetId,
-            };
-          },
-          { chatId: phone, text: message }
-        ),
-        PAGE_ACTION_TIMEOUT_MS,
-        `Envío a ${phone}`
-      );
+        log(`Reintentando envío a ${phone} tras error de sesión...`, 'info');
+        await ensureWppSession(page);
+        return attemptSend();
+      }
     },
 
     async kill(): Promise<void> {

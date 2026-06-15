@@ -23,6 +23,13 @@ function simplifyError(message: string): string {
   if (firstLine.includes('sin ACK')) {
     return 'WhatsApp no confirmó el envío';
   }
+  if (
+    firstLine.includes('execution context was destroyed') ||
+    firstLine.includes('wpp is undefined') ||
+    firstLine.includes("can't access property")
+  ) {
+    return 'Sesión de WhatsApp interrumpida (reintenta el envío)';
+  }
   return firstLine.length > 180 ? `${firstLine.slice(0, 180)}...` : firstLine;
 }
 
