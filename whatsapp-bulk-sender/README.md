@@ -17,8 +17,9 @@
 
 </div>
 
-> **Repositorio oficial (nuevo):** [github.com/waylabs10-ux/whatsapp-bulk-sender](https://github.com/waylabs10-ux/whatsapp-bulk-sender)  
-> Clona ese repo para trabajar. Esta copia dentro del monorepo es solo referencia.
+**Repositorio oficial:** https://github.com/waylabs10-ux/whatsapp-bulk-sender
+
+> Trabaja siempre desde este repositorio. Ya no uses la carpeta dentro de `OpenMasive-WAYLABS_OS`.
 
 ---
 
@@ -86,13 +87,13 @@ Edita `data/contacts.csv`:
 
 ```csv
 phone,name
-3113248642,Juan Pérez
+3113242354,Juan Pérez
 3001234567,María García
 ```
 
 **Formato del teléfono:**
 - Colombia: `3XXXXXXXXX` (10 dígitos, sin +57)
-- El sistema agrega `57` automáticamente → `573113248642@c.us`
+- El sistema agrega `57` automáticamente → `573113276483@c.us`
 - Sin espacios, guiones ni paréntesis
 
 ### 5. Preparar el mensaje
@@ -106,6 +107,22 @@ Hola {name}, este es un mensaje de prueba desde WAYLABS OS.
 `{name}` se reemplaza por el nombre del CSV. Si está vacío, usa `estimado/a`.
 
 ### 6. Ejecutar
+
+**Opción A — Panel web (recomendado):**
+
+```bash
+npm run web
+```
+
+Abre en tu navegador: **http://localhost:3847**
+
+Desde el panel puedes:
+- Conectar WhatsApp y ver el **QR en pantalla**
+- Editar contactos (CSV) y mensaje
+- Iniciar / detener el envío masivo
+- Ver logs en tiempo real y estadísticas
+
+**Opción B — Terminal (modo clásico):**
 
 ```bash
 npm start
@@ -129,9 +146,9 @@ La sesión queda guardada en `sessions/`. La próxima vez no pedirá QR (salvo q
 [19:15:17] WhatsApp sincronizado. Listo para enviar.
 [19:15:17] 3 contactos cargados desde CSV
 [19:15:17] Iniciando envío masivo a 3 contactos...
-[19:15:17] 📤 Enviando 1/3 → 573113248642@c.us
-[19:15:22] ✅ Enviado 1/3 - 573113248642@c.us (ack=1, id=true_573...)
-[19:15:22]    Destino confirmado por WhatsApp: 573113248642@c.us
+[19:15:17] 📤 Enviando 1/3 → 57xxxxxxxxx@c.us
+[19:15:22] ✅ Enviado 1/3 - 57xxxxxxxxx@c.us (ack=1, id=true_573...)
+[19:15:22]    Destino confirmado por WhatsApp: 57xxxxxxxxx@c.us
 [19:15:34] Esperando 12.4s antes del siguiente envío...
 ...
 [19:16:10] ────────── RESUMEN ──────────
@@ -153,6 +170,7 @@ DELAY_MAX_MS=20000     # Espera máxima entre envíos (ms)
 HEADLESS=false         # false = ver Firefox (recomendado)
 QR_TIMEOUT=0           # 0 = esperar QR sin límite
 AUTH_TIMEOUT=0
+WEB_PORT=3847          # Puerto del panel web
 ```
 
 | Variable | Qué hace |
@@ -231,8 +249,16 @@ Revisa el CSV: debe ser `3XXXXXXXXX` (Colombia) o número internacional sin sím
 
 ```
 whatsapp-bulk-sender/
+├── public/               # Panel web WAYLABS OS
+│   ├── index.html
+│   ├── css/style.css
+│   └── js/app.js
 ├── src/
-│   ├── index.ts          # Punto de entrada
+│   ├── web.ts            # Entrada panel web
+│   ├── webServer.ts      # API REST + SSE
+│   ├── sessionService.ts # Estado sesión y envíos
+│   ├── logBus.ts         # Logs en tiempo real
+│   ├── index.ts          # Entrada CLI
 │   ├── firefoxClient.ts  # Playwright + wa-js (envío, auth, Business/LID)
 │   ├── firefoxLauncher.ts# Lanza Firefox de Playwright
 │   ├── firefox.ts        # Bloqueo Chrome/Chromium
@@ -283,9 +309,11 @@ flowchart LR
 |---------|-------------|
 | `npm install` | Instala dependencias + Firefox Playwright |
 | `npm run setup` | Reinstala Firefox de Playwright |
-| `npm start` | Ejecuta el envío masivo |
+| `npm start` | Ejecutar envío masivo (terminal) |
+| `npm run web` | **Panel web** en http://localhost:3847 |
 | `npm run build` | Compila TypeScript → `dist/` |
-| `npm run start:prod` | Ejecuta versión compilada |
+| `npm run start:prod` | Ejecuta versión compilada (CLI) |
+| `npm run web:prod` | Panel web compilado |
 
 ---
 
@@ -308,6 +336,6 @@ flowchart LR
 
 <br />
 
-[Reportar un problema](https://github.com/waylabs10-ux/whatsapp-bulk-sender/issues) · [OpenMasive-WAYLABS_OS](https://github.com/waylabs10-ux/OpenMasive-WAYLABS_OS)
+[Reportar un problema](https://github.com/waylabs10-ux/whatsapp-bulk-sender/issues)
 
 </div>

@@ -4,6 +4,7 @@ import {
 } from '@wppconnect/wa-version';
 import { Page } from 'playwright';
 import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
 import path from 'path';
 import {
   AUTH_TIMEOUT,
@@ -14,6 +15,7 @@ import {
 } from './config';
 import { ensurePlaywrightFirefox } from './firefox';
 import { launchFirefox } from './firefoxLauncher';
+import { logBus } from './logBus';
 import {
   MAX_SEND_ATTEMPTS,
   PAGE_ACTION_TIMEOUT_MS,
@@ -401,10 +403,16 @@ function isRecoverableSendError(message: string): boolean {
 }
 
 async function waitForAuthentication(page: Page): Promise<void> {
-  await page.exposeFunction('qrChanged', (qr: string) => {
+  await page.exposeFunction('qrChanged', async (qr: string) => {
     const code = qr.split(',')[0];
     log('Escanea este QR con WhatsApp → Dispositivos vinculados', 'info');
     qrcode.generate(code, { small: true });
+    try {
+      const dataUrl = await QRCode.toDataURL(code, { margin: 1, width: 280 });
+      logBus.emitQr(dataUrl);
+    } catch {
+      // terminal QR sigue disponible
+    }
   });
 
   const isRegistered = await page.evaluate(() => {

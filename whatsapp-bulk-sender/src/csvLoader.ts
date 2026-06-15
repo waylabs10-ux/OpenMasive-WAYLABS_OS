@@ -69,3 +69,15 @@ export function loadContacts(): Contact[] {
   log(`${contacts.length} contactos cargados desde CSV`, 'info');
   return contacts;
 }
+
+export function readContactsCsvRaw(): string {
+  if (!fs.existsSync(CONTACTS_CSV)) {
+    return 'phone,name\n';
+  }
+  return fs.readFileSync(CONTACTS_CSV, 'utf-8');
+}
+
+export function saveContactsCsv(content: string): number {
+  fs.writeFileSync(CONTACTS_CSV, content, 'utf-8');
+  return loadContacts().length;
+}

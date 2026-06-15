@@ -39,6 +39,16 @@ const sentCountStmt = db.prepare(
   "SELECT COUNT(*) as count FROM sent_messages WHERE status = 'success'"
 );
 
+const failedCountStmt = db.prepare(
+  "SELECT COUNT(*) as count FROM sent_messages WHERE status != 'success'"
+);
+
+const historyStmt = db.prepare(`
+  SELECT phone, name, status, sent_at, error_message
+  FROM sent_messages
+  ORDER BY sent_at DESC
+`);
+
 export function isAlreadySent(phone: string): boolean {
   const row = checkSentStmt.get(phone, 'success');
   return row !== undefined;
@@ -60,6 +70,31 @@ export function getSentCount(): number {
 
 export function getPendingCount(total: number): number {
   return total - getSentCount();
+}
+
+export function getFailedCount(): number {
+  const row = failedCountStmt.get() as { count: number };
+  return row.count;
+}
+
+export function getHistory(): Array<{
+  phone: string;
+  name: string | null;
+  status: string;
+  sent_at: string;
+  error_message: string | null;
+}> {
+  return historyStmt.all() as Array<{
+    phone: string;
+    name: string | null;
+    status: string;
+    sent_at: string;
+    error_message: string | null;
+  }>;
+}
+
+export function resetDatabase(): void {
+  db.exec('DELETE FROM sent_messages');
 }
 
 export function closeDatabase(): void {

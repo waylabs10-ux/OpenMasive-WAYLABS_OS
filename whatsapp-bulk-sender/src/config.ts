@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { logBus } from './logBus';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -14,6 +15,7 @@ export const HEADLESS = process.env.HEADLESS === 'true';
 export const FIREFOX_PATH = process.env.FIREFOX_PATH;
 export const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT ?? '0', 10);
 export const AUTH_TIMEOUT = parseInt(process.env.AUTH_TIMEOUT ?? '0', 10);
+export const WEB_PORT = parseInt(process.env.WEB_PORT ?? '3847', 10);
 
 const COLORS = {
   green: '\x1b[32m',
@@ -36,6 +38,7 @@ export function log(message: string, type: LogType = 'info'): void {
   const now = new Date();
   const timestamp = now.toLocaleTimeString('es-CO', { hour12: false });
   console.log(`${LOG_COLORS[type]}[${timestamp}] ${message}${COLORS.reset}`);
+  logBus.emitLog(message, type);
 }
 
 export function randomDelay(minMs: number, maxMs: number): Promise<void> {

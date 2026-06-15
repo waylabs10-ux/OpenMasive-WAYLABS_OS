@@ -55,7 +55,8 @@ function isNotOnWhatsAppError(message: string): boolean {
 export async function sendBulkMessages(
   client: WaClient,
   contacts: Contact[],
-  messageTemplate: string
+  messageTemplate: string,
+  options?: { abortSignal?: AbortSignal }
 ): Promise<BulkSummary> {
   const total = contacts.length;
   const summary: BulkSummary = { sent: 0, skipped: 0, failed: 0 };
@@ -73,6 +74,11 @@ export async function sendBulkMessages(
   await client.waitUntilReady();
 
   for (let i = 0; i < contacts.length; i++) {
+    if (options?.abortSignal?.aborted) {
+      log('Envío cancelado.', 'skip');
+      break;
+    }
+
     const { phone, name } = contacts[i];
     const index = i + 1;
 
@@ -112,6 +118,11 @@ export async function sendBulkMessages(
     }
 
     if (i < contacts.length - 1) {
+      if (options?.abortSignal?.aborted) {
+        log('Envío cancelado.', 'skip');
+        break;
+      }
+
       const delayMs = Math.floor(
         Math.random() * (DELAY_MAX_MS - DELAY_MIN_MS + 1) + DELAY_MIN_MS
       );
