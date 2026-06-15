@@ -47,3 +47,24 @@ export function formatMessage(template: string, name?: string): string {
   const displayName = name?.trim() || 'estimado/a';
   return template.replace(/\{name\}/g, displayName);
 }
+
+export function printBanner(): void {
+  const cyan = COLORS.cyan;
+  const dim = '\x1b[2m';
+  const reset = COLORS.reset;
+  const bold = '\x1b[1m';
+
+  console.log('');
+  console.log(`${cyan}${bold}  ██╗    ██╗ █████╗ ██╗   ██╗██╗      █████╗ ██████╗ ███████╗${reset}`);
+  console.log(`${cyan}${bold}  ██║    ██║██╔══██╗╚██╗ ██╔╝██║     ██╔══██╗██╔══██╗██╔════╝${reset}`);
+  console.log(`${cyan}${bold}  ██║ █╗ ██║███████║ ╚████╔╝ ██║     ███████║██████╔╝███████╗${reset}`);
+  console.log(`${cyan}${bold}  ██║███╗██║██╔══██║  ╚██╔╝  ██║     ██╔══██║██╔══██╗╚════██║${reset}`);
+  console.log(`${cyan}${bold}  ╚███╔███╔╝██║  ██║   ██║   ███████╗██║  ██║██████╔╝███████║${reset}`);
+  console.log(`${cyan}${bold}   ╚══╝╚══╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝${reset}`);
+  console.log(`${cyan}${bold}                        OS${reset}`);
+  console.log('');
+  console.log(`${cyan}  WhatsApp Bulk Sender${reset}  ${dim}· Firefox · Playwright · TypeScript${reset}`);
+  console.log(`${dim}  DRANDIGITAL S.a.s${reset}`);
+  console.log(`${dim}  github.com/waylabs10-ux/whatsapp-bulk-sender${reset}`);
+  console.log('');
+}
