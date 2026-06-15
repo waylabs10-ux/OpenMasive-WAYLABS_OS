@@ -1,4 +1,6 @@
-const PAGE_ACTION_TIMEOUT_MS = 60_000;
+const PAGE_ACTION_TIMEOUT_MS = 90_000;
+const MAX_SEND_ATTEMPTS = 3;
+const POST_SEND_COOLDOWN_MS = 2_000;
 
 export function withTimeout<T>(
   promise: Promise<T>,
@@ -16,4 +18,4 @@ export function withTimeout<T>(
   ]);
 }
 
-export { PAGE_ACTION_TIMEOUT_MS };
+export { MAX_SEND_ATTEMPTS, PAGE_ACTION_TIMEOUT_MS, POST_SEND_COOLDOWN_MS };

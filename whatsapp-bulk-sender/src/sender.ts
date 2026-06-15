@@ -53,8 +53,17 @@ export async function sendBulkMessages(
 ): Promise<BulkSummary> {
   const total = contacts.length;
   const summary: BulkSummary = { sent: 0, skipped: 0, failed: 0 };
+  const pending = contacts.filter((contact) => !isAlreadySent(contact.phone)).length;
+  const alreadySent = total - pending;
 
   log(`Iniciando envío masivo a ${total} contactos...`, 'info');
+  if (alreadySent > 0) {
+    log(
+      `${alreadySent} contacto(s) ya enviados previamente serán omitidos. Borra data/sent.db para reenviar a todos.`,
+      'skip'
+    );
+  }
+  log(`${pending} contacto(s) pendientes por enviar.`, 'info');
   await client.waitUntilReady();
 
   for (let i = 0; i < contacts.length; i++) {
