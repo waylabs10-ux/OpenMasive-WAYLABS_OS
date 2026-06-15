@@ -42,6 +42,7 @@ export function loadContacts(): Contact[] {
   }
 
   const contacts: Contact[] = [];
+  const seenPhones = new Set<string>();
 
   for (const row of parsed.data) {
     const rawPhone = row.phone?.trim();
@@ -52,6 +53,12 @@ export function loadContacts(): Contact[] {
       log(`Número inválido omitido: ${rawPhone}`, 'error');
       continue;
     }
+
+    if (seenPhones.has(phone)) {
+      log(`Contacto duplicado omitido: ${rawPhone}`, 'skip');
+      continue;
+    }
+    seenPhones.add(phone);
 
     contacts.push({
       phone,
