@@ -3,6 +3,7 @@ import {
   CONTACTS_CSV,
   log,
   MESSAGE_FILE,
+  printBanner,
 } from './config';
 import { assertFirefoxOnly } from './firefox';
 import { createFirefoxClient } from './firefoxClient';
@@ -35,8 +36,9 @@ async function shutdown(): Promise<void> {
 
 async function main(): Promise<void> {
   assertFirefoxOnly();
+  printBanner();
 
-  log('Iniciando WhatsApp Bulk Sender (solo Firefox)...', 'info');
+  log('Iniciando motor de envío (solo Firefox)...', 'info');
   log(`Contactos: ${CONTACTS_CSV}`, 'info');
   log('Chrome y Chromium están bloqueados en este sistema.', 'info');
 
