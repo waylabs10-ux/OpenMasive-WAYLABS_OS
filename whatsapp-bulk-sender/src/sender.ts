@@ -6,13 +6,15 @@ import {
   randomDelay,
 } from './config';
 import { Contact } from './csvLoader';
+import { isOptedOut } from './optout';
 import { isAlreadySent, markAsSent } from './tracker';
 import { WaClient } from './types';
 
-interface BulkSummary {
+export interface BulkSummary {
   sent: number;
   skipped: number;
   failed: number;
+  excluded: number;
 }
 
 function simplifyError(message: string): string {
@@ -60,7 +62,7 @@ export async function sendBulkMessages(
   options?: { abortSignal?: AbortSignal }
 ): Promise<BulkSummary> {
   const total = contacts.length;
-  const summary: BulkSummary = { sent: 0, skipped: 0, failed: 0 };
+  const summary: BulkSummary = { sent: 0, skipped: 0, failed: 0, excluded: 0 };
   const pending = contacts.filter((contact) => !isAlreadySent(contact.phone)).length;
   const alreadySent = total - pending;
 
@@ -82,6 +84,13 @@ export async function sendBulkMessages(
 
     const { phone, name } = contacts[i];
     const index = i + 1;
+
+    if (isOptedOut(phone)) {
+      log(`🚫 Excluido ${phone} - lista Habeas Data`, 'skip');
+      markAsSent(phone, name, 'optout_excluded', 'Lista de exclusión Ley 1581');
+      summary.excluded++;
+      continue;
+    }
 
     if (isAlreadySent(phone)) {
       log(`⏭️ Saltando ${phone} - ya enviado`, 'skip');
@@ -136,6 +145,7 @@ export async function sendBulkMessages(
   log(`✅ Enviados:  ${summary.sent}`, 'success');
   log(`⏭️ Saltados:  ${summary.skipped}`, 'skip');
   log(`❌ Fallidos:  ${summary.failed}`, 'error');
+  log(`🚫 Excluidos: ${summary.excluded}`, 'skip');
   log('─────────────────────────────', 'info');
 
   return summary;

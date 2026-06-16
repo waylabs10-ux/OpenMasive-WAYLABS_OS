@@ -7,13 +7,20 @@ import {
 import { createFirefoxClient } from './firefoxClient';
 import { loadContacts } from './csvLoader';
 import { logBus } from './logBus';
+import { generateCampaignReport } from './campaignReport';
+import { getOptoutCount, readOptoutRaw } from './optout';
 import { sendBulkMessages } from './sender';
 import {
   closeDatabase,
+  finishCampaign,
   getFailedCount,
   getHistory,
   getSentCount,
+  listCampaigns,
+  getCampaign,
+  persistOptoutList,
   resetDatabase,
+  startCampaign,
 } from './tracker';
 import { WaClient } from './types';
 
@@ -30,6 +37,8 @@ export interface AppStatus {
   sent: number;
   skipped: number;
   failed: number;
+  excluded: number;
+  optoutCount: number;
   contactCount: number;
   lastError?: string;
 }
@@ -38,7 +47,7 @@ let client: WaClient | null = null;
 let sessionState: SessionState = 'idle';
 let sending = false;
 let sendAbort: AbortController | null = null;
-let lastSummary = { sent: 0, skipped: 0, failed: 0 };
+let lastSummary = { sent: 0, skipped: 0, failed: 0, excluded: 0 };
 let lastError: string | undefined;
 
 function emitStatus(): void {
@@ -57,6 +66,8 @@ function emitStatus(): void {
     sent: sending ? lastSummary.sent : getSentCount(),
     skipped: sending ? lastSummary.skipped : 0,
     failed: sending ? lastSummary.failed : getFailedCount(),
+    excluded: sending ? lastSummary.excluded : 0,
+    optoutCount: getOptoutCount(),
     contactCount,
     lastError,
   };
@@ -67,6 +78,8 @@ function emitStatus(): void {
     sent: status.sent,
     skipped: status.skipped,
     failed: status.failed,
+    excluded: status.excluded,
+    optoutCount: status.optoutCount,
     contactCount: status.contactCount,
   });
 }
@@ -87,6 +100,8 @@ export function getStatus(): AppStatus {
     sent: sending ? lastSummary.sent : getSentCount(),
     skipped: sending ? lastSummary.skipped : 0,
     failed: sending ? lastSummary.failed : getFailedCount(),
+    excluded: sending ? lastSummary.excluded : 0,
+    optoutCount: getOptoutCount(),
     contactCount,
     lastError,
   };
@@ -116,7 +131,7 @@ export async function connectWhatsApp(): Promise<void> {
   }
 }
 
-export async function startBulkSend(): Promise<void> {
+export async function startBulkSend(campaignName?: string): Promise<void> {
   if (!client || sessionState !== 'ready') {
     throw new Error('Conecta WhatsApp antes de iniciar el envío');
   }
@@ -138,6 +153,16 @@ export async function startBulkSend(): Promise<void> {
     throw new Error('El mensaje está vacío');
   }
 
+  const displayName =
+    campaignName?.trim() ||
+    `Campaña ${new Date().toLocaleDateString('es-CO')} ${new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`;
+
+  const campaignId = startCampaign(
+    displayName,
+    contacts.length,
+    messageTemplate.slice(0, 200)
+  );
+
   sending = true;
   sendAbort = new AbortController();
   sessionState = 'sending';
@@ -148,7 +173,31 @@ export async function startBulkSend(): Promise<void> {
       abortSignal: sendAbort.signal,
     });
     sessionState = 'ready';
+
+    const report = generateCampaignReport(
+      {
+        name: displayName,
+        totalContacts: contacts.length,
+        sent: lastSummary.sent,
+        skipped: lastSummary.skipped,
+        failed: lastSummary.failed,
+        excluded: lastSummary.excluded,
+        messagePreview: messageTemplate,
+      },
+      campaignId
+    );
+
+    finishCampaign(campaignId, {
+      sent: lastSummary.sent,
+      skipped: lastSummary.skipped,
+      failed: lastSummary.failed,
+      excluded: lastSummary.excluded,
+      reportCsv: report.csvPath,
+      reportHtml: report.htmlPath,
+    });
+
     log('Envío masivo completado desde el panel web.', 'success');
+    log(`Informe de campaña generado (HTML + CSV). ID: ${campaignId}`, 'success');
   } catch (err) {
     if (sendAbort.signal.aborted) {
       sessionState = 'ready';
@@ -191,13 +240,32 @@ export async function disconnectWhatsApp(): Promise<void> {
 
 export function clearSentHistory(): void {
   resetDatabase();
-  lastSummary = { sent: 0, skipped: 0, failed: 0 };
+  lastSummary = { sent: 0, skipped: 0, failed: 0, excluded: 0 };
   emitStatus();
   log('Historial de envíos borrado (data/sent.db).', 'info');
 }
 
 export function getSendHistory() {
   return getHistory();
+}
+
+export function getCampaignsList() {
+  return listCampaigns();
+}
+
+export function getCampaignById(id: number) {
+  return getCampaign(id);
+}
+
+export function getOptoutContent(): string {
+  return readOptoutRaw();
+}
+
+export function saveOptoutContent(content: string): number {
+  const count = persistOptoutList(content);
+  log(`${count} número(s) en lista de exclusión Habeas Data.`, 'info');
+  emitStatus();
+  return count;
 }
 
 export async function shutdownApp(): Promise<void> {

@@ -186,7 +186,11 @@ code {
 }
 
 @media (min-width: 768px) {
-  .metrics { grid-template-columns: repeat(4, 1fr); }
+  .metrics { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (min-width: 1024px) {
+  .metrics { grid-template-columns: repeat(5, 1fr); }
 }
 
 .metric {
@@ -353,6 +357,102 @@ code {
 }
 
 /* Form */
+.field-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 0.35rem;
+}
+
+.field-input {
+  width: 100%;
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.field-input:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 0;
+  border-color: var(--blue);
+  background: var(--card);
+}
+
+.campaign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.campaign-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+  background: var(--bg);
+}
+
+.campaign-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.campaign-item-head strong {
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+
+.campaign-status {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.campaign-status.done {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.campaign-status.pending {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.campaign-meta {
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.6rem;
+}
+
+.campaign-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.campaign-actions a {
+  text-decoration: none;
+}
+
+.empty-note {
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  padding: 0.5rem 0;
+}
+
 textarea {
   width: 100%;
   display: block;

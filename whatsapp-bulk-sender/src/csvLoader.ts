@@ -7,7 +7,7 @@ export interface Contact {
   name: string;
 }
 
-function normalizePhone(raw: string): string | null {
+export function normalizePhone(raw: string): string | null {
   let digits = raw.replace(/[\s\-()]/g, '');
 
   if (digits.startsWith('0')) {

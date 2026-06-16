@@ -14,8 +14,12 @@ import {
   clearSentHistory,
   connectWhatsApp,
   disconnectWhatsApp,
+  getCampaignById,
+  getCampaignsList,
+  getOptoutContent,
   getSendHistory,
   getStatus,
+  saveOptoutContent,
   shutdownApp,
   startBulkSend,
   stopBulkSend,
@@ -112,7 +116,7 @@ export function startWebServer(): void {
     res.json({ ok: true, status: getStatus() });
   });
 
-  app.post('/api/send/start', async (_req, res) => {
+  app.post('/api/send/start', async (req, res) => {
     const status = getStatus();
     if (status.session !== 'ready') {
       res.status(400).json({ ok: false, error: 'Conecta WhatsApp antes de enviar' });
@@ -123,7 +127,8 @@ export function startWebServer(): void {
       return;
     }
 
-    void startBulkSend().catch(() => null);
+    const campaignName = String(req.body?.campaignName ?? '').trim() || undefined;
+    void startBulkSend(campaignName).catch(() => null);
     res.json({ ok: true, status: getStatus() });
   });
 
@@ -135,6 +140,38 @@ export function startWebServer(): void {
   app.post('/api/db/reset', (_req, res) => {
     clearSentHistory();
     res.json({ ok: true, status: getStatus() });
+  });
+
+  app.get('/api/optout', (_req, res) => {
+    res.json({ content: getOptoutContent(), count: getStatus().optoutCount });
+  });
+
+  app.put('/api/optout', (req, res) => {
+    const content = String(req.body?.content ?? '');
+    const count = saveOptoutContent(content);
+    res.json({ ok: true, count, status: getStatus() });
+  });
+
+  app.get('/api/campaigns', (_req, res) => {
+    res.json({ campaigns: getCampaignsList() });
+  });
+
+  app.get('/api/campaigns/:id/report.csv', (req, res) => {
+    const campaign = getCampaignById(Number(req.params.id));
+    if (!campaign?.report_csv || !fs.existsSync(campaign.report_csv)) {
+      res.status(404).json({ error: 'Informe no encontrado' });
+      return;
+    }
+    res.download(campaign.report_csv);
+  });
+
+  app.get('/api/campaigns/:id/report.html', (req, res) => {
+    const campaign = getCampaignById(Number(req.params.id));
+    if (!campaign?.report_html || !fs.existsSync(campaign.report_html)) {
+      res.status(404).json({ error: 'Informe no encontrado' });
+      return;
+    }
+    res.sendFile(path.resolve(campaign.report_html));
   });
 
   app.get('*', (_req, res) => {

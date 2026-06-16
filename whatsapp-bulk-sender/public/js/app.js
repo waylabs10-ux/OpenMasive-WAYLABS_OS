@@ -6,6 +6,7 @@ const els = {
   statSent: $('statSent'),
   statSkipped: $('statSkipped'),
   statFailed: $('statFailed'),
+  statExcluded: $('statExcluded'),
   btnConnect: $('btnConnect'),
   btnDisconnect: $('btnDisconnect'),
   btnStart: $('btnStart'),
@@ -14,8 +15,13 @@ const els = {
   btnSaveContacts: $('btnSaveContacts'),
   btnSaveMessage: $('btnSaveMessage'),
   btnClearLog: $('btnClearLog'),
+  btnRefreshCampaigns: $('btnRefreshCampaigns'),
+  btnSaveOptout: $('btnSaveOptout'),
+  campaignName: $('campaignName'),
+  campaignList: $('campaignList'),
   contactsCsv: $('contactsCsv'),
   messageText: $('messageText'),
+  optoutList: $('optoutList'),
   qrBox: $('qrBox'),
   qrImage: $('qrImage'),
   logConsole: $('logConsole'),
@@ -28,6 +34,8 @@ const sessionLabels = {
   sending: 'Enviando…',
   error: 'Error de sesión',
 };
+
+let wasSending = false;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -56,6 +64,55 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;');
 }
 
+function formatDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('es-CO', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function renderCampaigns(campaigns) {
+  if (!campaigns.length) {
+    els.campaignList.innerHTML = '<p class="empty-note">Aún no hay campañas registradas.</p>';
+    return;
+  }
+
+  els.campaignList.innerHTML = campaigns
+    .map((c) => {
+      const finished = Boolean(c.finished_at);
+      const statusClass = finished ? 'done' : 'pending';
+      const statusLabel = finished ? 'Completada' : 'En curso';
+      return `
+        <article class="campaign-item">
+          <div class="campaign-item-head">
+            <strong>${escapeHtml(c.name)}</strong>
+            <span class="campaign-status ${statusClass}">${statusLabel}</span>
+          </div>
+          <p class="campaign-meta">
+            ${formatDate(c.started_at)}
+            · ${c.sent ?? 0} enviados · ${c.excluded ?? 0} excluidos · ${c.failed ?? 0} fallidos
+          </p>
+          <div class="campaign-actions">
+            <a class="btn btn-line btn-sm" href="/api/campaigns/${c.id}/report.html" target="_blank" rel="noopener">Ver HTML</a>
+            <a class="btn btn-line btn-sm" href="/api/campaigns/${c.id}/report.csv">Descargar CSV</a>
+          </div>
+        </article>
+      `;
+    })
+    .join('');
+}
+
+async function loadCampaigns() {
+  const data = await api('/api/campaigns');
+  renderCampaigns(data.campaigns || []);
+}
+
 function updateUI(status) {
   const session = status.session || 'idle';
   const label = sessionLabels[session] || session;
@@ -73,6 +130,9 @@ function updateUI(status) {
   els.statSent.textContent = status.sent ?? 0;
   els.statSkipped.textContent = status.skipped ?? 0;
   els.statFailed.textContent = status.failed ?? 0;
+  if (els.statExcluded) {
+    els.statExcluded.textContent = status.excluded ?? 0;
+  }
 
   const ready = session === 'ready';
   const sending = Boolean(status.sending);
@@ -86,17 +146,27 @@ function updateUI(status) {
   if (session === 'ready' || session === 'sending') {
     els.qrBox.classList.add('hidden');
   }
+
+  if (wasSending && !sending) {
+    loadCampaigns().catch(() => null);
+  }
+  wasSending = sending;
 }
 
 async function loadData() {
-  const [contacts, message, status] = await Promise.all([
+  const [contacts, message, status, optout] = await Promise.all([
     api('/api/contacts'),
     api('/api/message'),
     api('/api/status'),
+    api('/api/optout'),
   ]);
   els.contactsCsv.value = contacts.csv;
   els.messageText.value = message.message;
+  if (els.optoutList) {
+    els.optoutList.value = optout.content;
+  }
   updateUI(status);
+  await loadCampaigns();
 }
 
 function connectEvents() {
@@ -147,7 +217,11 @@ els.btnDisconnect.addEventListener('click', async () => {
 
 els.btnStart.addEventListener('click', async () => {
   try {
-    const data = await api('/api/send/start', { method: 'POST' });
+    const campaignName = els.campaignName?.value?.trim() || '';
+    const data = await api('/api/send/start', {
+      method: 'POST',
+      body: JSON.stringify({ campaignName }),
+    });
     updateUI(data.status);
   } catch (err) {
     appendLog({
@@ -201,6 +275,44 @@ els.btnSaveMessage.addEventListener('click', async () => {
     message: 'Mensaje guardado.',
     type: 'success',
   });
+});
+
+els.btnSaveOptout?.addEventListener('click', async () => {
+  try {
+    const data = await api('/api/optout', {
+      method: 'PUT',
+      body: JSON.stringify({ content: els.optoutList.value }),
+    });
+    appendLog({
+      timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
+      message: `Lista de exclusión guardada: ${data.count} número(s).`,
+      type: 'success',
+    });
+    updateUI(data.status);
+  } catch (err) {
+    appendLog({
+      timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
+      message: err.message,
+      type: 'error',
+    });
+  }
+});
+
+els.btnRefreshCampaigns?.addEventListener('click', async () => {
+  try {
+    await loadCampaigns();
+    appendLog({
+      timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
+      message: 'Lista de campañas actualizada.',
+      type: 'info',
+    });
+  } catch (err) {
+    appendLog({
+      timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
+      message: err.message,
+      type: 'error',
+    });
+  }
 });
 
 els.btnClearLog.addEventListener('click', () => {

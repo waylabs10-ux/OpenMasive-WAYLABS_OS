@@ -55,6 +55,10 @@
         <p class="metric-label">Fallidos</p>
         <p class="metric-value" id="statFailed">0</p>
       </article>
+      <article class="metric">
+        <p class="metric-label">Excluidos Habeas</p>
+        <p class="metric-value" id="statExcluded">0</p>
+      </article>
     </section>
 
     <div class="grid">
@@ -79,12 +83,36 @@
             <h2>Envío</h2>
             <span class="live-tag hidden" id="liveTag">En curso</span>
           </div>
-          <p class="block-text">El sistema aplica pausas automáticas entre mensajes para reducir bloqueos.</p>
-          <div class="btn-row">
+          <p class="block-text">Nombre la campaña para generar un informe exportable al finalizar (ideal para entregar a clientes).</p>
+          <label class="field-label" for="campaignName">Nombre de campaña</label>
+          <input type="text" id="campaignName" class="field-input" placeholder="Ej: Alcaldía Cartagena — marzo 2026" />
+          <div class="btn-row" style="margin-top: 0.75rem">
             <button type="button" class="btn btn-green" id="btnStart" disabled>Iniciar envío</button>
             <button type="button" class="btn btn-line" id="btnStop" disabled>Detener</button>
             <button type="button" class="btn btn-text" id="btnResetDb">Limpiar historial</button>
           </div>
+        </section>
+
+        <section class="block" id="panel-reports">
+          <div class="block-top">
+            <h2>Informes de campaña</h2>
+            <span class="file-tag">Premium</span>
+          </div>
+          <p class="block-text">Descargue informes HTML y CSV con resultados detallados por contacto.</p>
+          <div id="campaignList" class="campaign-list">
+            <p class="empty-note">Aún no hay campañas registradas.</p>
+          </div>
+          <button type="button" class="btn btn-line" id="btnRefreshCampaigns">Actualizar lista</button>
+        </section>
+
+        <section class="block" id="panel-optout">
+          <div class="block-top">
+            <h2>Lista de exclusión</h2>
+            <span class="file-tag">Ley 1581</span>
+          </div>
+          <p class="block-text">Números que <strong>no</strong> deben recibir mensajes (solicitud de no contacto / Habeas Data).</p>
+          <textarea id="optoutList" rows="5" spellcheck="false"># Un número por línea (3XXXXXXXXX)</textarea>
+          <button type="button" class="btn btn-line" id="btnSaveOptout">Guardar exclusión</button>
         </section>
 
         <section class="block" id="panel-contacts">

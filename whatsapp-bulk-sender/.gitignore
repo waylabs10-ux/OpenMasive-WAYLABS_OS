@@ -2,4 +2,6 @@ node_modules/
 dist/
 sessions/
 data/sent.db
+data/reports/
+data/optout.txt
 .env

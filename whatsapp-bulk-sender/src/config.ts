@@ -15,6 +15,8 @@ export const HEADLESS = process.env.HEADLESS === 'true';
 export const FIREFOX_PATH = process.env.FIREFOX_PATH;
 export const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT ?? '0', 10);
 export const AUTH_TIMEOUT = parseInt(process.env.AUTH_TIMEOUT ?? '0', 10);
+export const REPORTS_DIR = path.resolve(__dirname, '../data/reports');
+export const OPTOUT_FILE = path.resolve(__dirname, '../data/optout.txt');
 export const WEB_PORT = parseInt(process.env.WEB_PORT ?? '3847', 10);
 
 const COLORS = {

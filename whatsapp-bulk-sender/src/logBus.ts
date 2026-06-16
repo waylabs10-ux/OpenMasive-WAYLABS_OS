@@ -17,6 +17,8 @@ export interface StatusEvent {
   sent: number;
   skipped: number;
   failed: number;
+  excluded?: number;
+  optoutCount?: number;
   contactCount: number;
 }
 
