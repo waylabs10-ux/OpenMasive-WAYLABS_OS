@@ -3,157 +3,126 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VOTOMAP WHAT — Mensajería WhatsApp</title>
+  <title>Bot WhatsApp — VOTOMAP</title>
+  <link rel="icon" type="image/png" href="https://www.votomap.com/favicon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <div class="logo-mark">VW</div>
-        <div>
-          <h1>VOTOMAP<br /><span>WHAT</span></h1>
-          <p class="sidebar-tagline">Mensajería empresarial</p>
-        </div>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="https://www.votomap.com" target="_blank" rel="noopener">
+        <img src="https://www.votomap.com/favicon.png" width="32" height="32" alt="VOTOMAP" class="brand-icon" />
+        <span class="brand-name">VOTO<span class="brand-accent">MAP</span></span>
+      </a>
+      <div class="header-meta">
+        <span class="module-label">Bot WhatsApp</span>
+        <span class="module-sep">/</span>
+        <span class="module-sub">Envío masivo</span>
       </div>
-
-      <nav class="sidebar-nav">
-        <a href="#panel-session" class="nav-item active">Sesión WhatsApp</a>
-        <a href="#panel-send" class="nav-item">Envío masivo</a>
-        <a href="#panel-contacts" class="nav-item">Contactos</a>
-        <a href="#panel-message" class="nav-item">Mensaje</a>
-      </nav>
-
-      <div class="sidebar-footer">
-        <p>Plataforma segura</p>
-        <small>Firefox · Playwright · cifrado de sesión local</small>
+      <div class="session-pill" id="sessionBadge">
+        <span class="session-dot"></span>
+        <span class="session-text">Desconectado</span>
       </div>
-    </aside>
+    </div>
+  </header>
 
-    <div class="main">
-      <header class="topbar">
-        <div class="topbar-left">
-          <p class="breadcrumb">Panel de control</p>
-          <h2>Centro de operaciones</h2>
-        </div>
-        <div class="topbar-right">
-          <div class="session-pill" id="sessionBadge">
-            <span class="session-dot"></span>
-            <span class="session-text">Desconectado</span>
-          </div>
-        </div>
-      </header>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <p class="eyebrow">votomap.com · centro de control</p>
+        <h1>Panel de envío WhatsApp</h1>
+        <p class="lede">Gestione contactos, mensajes y el estado de su sesión desde un solo lugar.</p>
+      </div>
+    </div>
 
-      <section class="kpi-row" id="statsGrid">
-        <article class="kpi-card">
-          <div class="kpi-icon contacts">&#128203;</div>
-          <div>
-            <span class="kpi-label">Contactos</span>
-            <strong id="statContacts">0</strong>
-          </div>
-        </article>
-        <article class="kpi-card accent-success">
-          <div class="kpi-icon sent">&#10003;</div>
-          <div>
-            <span class="kpi-label">Enviados</span>
-            <strong id="statSent">0</strong>
-          </div>
-        </article>
-        <article class="kpi-card accent-warn">
-          <div class="kpi-icon skipped">&#9193;</div>
-          <div>
-            <span class="kpi-label">Saltados</span>
-            <strong id="statSkipped">0</strong>
-          </div>
-        </article>
-        <article class="kpi-card accent-error">
-          <div class="kpi-icon failed">&#10007;</div>
-          <div>
-            <span class="kpi-label">Fallidos</span>
-            <strong id="statFailed">0</strong>
-          </div>
-        </article>
-      </section>
+    <section class="metrics" id="statsGrid">
+      <article class="metric">
+        <p class="metric-label">Contactos cargados</p>
+        <p class="metric-value" id="statContacts">0</p>
+      </article>
+      <article class="metric metric--ok">
+        <p class="metric-label">Enviados</p>
+        <p class="metric-value" id="statSent">0</p>
+      </article>
+      <article class="metric metric--muted">
+        <p class="metric-label">Saltados</p>
+        <p class="metric-value" id="statSkipped">0</p>
+      </article>
+      <article class="metric metric--bad">
+        <p class="metric-label">Fallidos</p>
+        <p class="metric-value" id="statFailed">0</p>
+      </article>
+    </section>
 
-      <div class="workspace">
-        <div class="workspace-main">
-          <section class="panel card" id="panel-session">
-            <div class="panel-head">
-              <h3>Conexión WhatsApp</h3>
-              <span class="panel-badge">Paso 1</span>
-            </div>
-            <p class="panel-desc">Vincula tu cuenta empresarial de WhatsApp Web. El código QR aparecerá aquí y en la consola del servidor.</p>
-            <div class="actions">
-              <button class="btn btn-primary" id="btnConnect">Conectar WhatsApp</button>
-              <button class="btn btn-outline" id="btnDisconnect" disabled>Desconectar</button>
-            </div>
-            <div class="qr-panel hidden" id="qrBox">
-              <div class="qr-panel-inner">
-                <p class="qr-title">Escanea con tu teléfono</p>
-                <p class="qr-sub">WhatsApp → Dispositivos vinculados → Vincular dispositivo</p>
-                <img id="qrImage" alt="Código QR WhatsApp" />
-              </div>
-            </div>
-          </section>
+    <div class="grid">
+      <div class="grid-main">
+        <section class="block" id="panel-session">
+          <div class="block-top">
+            <h2>Sesión WhatsApp</h2>
+          </div>
+          <p class="block-text">Vincule su cuenta con el código QR. La ventana de Firefox se abrirá en su equipo.</p>
+          <div class="btn-row">
+            <button type="button" class="btn btn-blue" id="btnConnect">Conectar</button>
+            <button type="button" class="btn btn-line" id="btnDisconnect" disabled>Desconectar</button>
+          </div>
+          <div class="qr-wrap hidden" id="qrBox">
+            <p class="qr-label">Escanee con WhatsApp → Dispositivos vinculados</p>
+            <img id="qrImage" alt="Código QR" width="200" height="200" />
+          </div>
+        </section>
 
-          <section class="panel card" id="panel-send">
-            <div class="panel-head">
-              <h3>Campaña de envío</h3>
-              <span class="panel-badge">Paso 2</span>
-            </div>
-            <p class="panel-desc">Inicia o detiene el envío masivo. Los mensajes respetan intervalos de seguridad entre contactos.</p>
-            <div class="actions">
-              <button class="btn btn-success" id="btnStart" disabled>Iniciar campaña</button>
-              <button class="btn btn-danger" id="btnStop" disabled>Detener</button>
-              <button class="btn btn-ghost" id="btnResetDb">Reiniciar historial</button>
-            </div>
-          </section>
+        <section class="block" id="panel-send">
+          <div class="block-top">
+            <h2>Envío</h2>
+            <span class="live-tag hidden" id="liveTag">En curso</span>
+          </div>
+          <p class="block-text">El sistema aplica pausas automáticas entre mensajes para reducir bloqueos.</p>
+          <div class="btn-row">
+            <button type="button" class="btn btn-green" id="btnStart" disabled>Iniciar envío</button>
+            <button type="button" class="btn btn-line" id="btnStop" disabled>Detener</button>
+            <button type="button" class="btn btn-text" id="btnResetDb">Limpiar historial</button>
+          </div>
+        </section>
 
-          <section class="panel card" id="panel-contacts">
-            <div class="panel-head">
-              <h3>Base de contactos</h3>
-              <span class="tag">CSV</span>
-            </div>
-            <p class="panel-desc">Formato Colombia: <code>3XXXXXXXXX</code> sin +57. Una fila por contacto.</p>
-            <textarea id="contactsCsv" rows="8" spellcheck="false">phone,name
+        <section class="block" id="panel-contacts">
+          <div class="block-top">
+            <h2>Contactos</h2>
+            <span class="file-tag">CSV</span>
+          </div>
+          <p class="block-text">Números Colombia: <code>3XXXXXXXXX</code> (sin indicativo +57).</p>
+          <textarea id="contactsCsv" rows="7" spellcheck="false">phone,name
 3001234567,Juan Pérez
 3109876543,María García</textarea>
-            <button class="btn btn-outline" id="btnSaveContacts">Guardar contactos</button>
-          </section>
+          <button type="button" class="btn btn-line" id="btnSaveContacts">Guardar contactos</button>
+        </section>
 
-          <section class="panel card" id="panel-message">
-            <div class="panel-head">
-              <h3>Plantilla de mensaje</h3>
-              <span class="tag">{name}</span>
-            </div>
-            <p class="panel-desc">Usa <code>{name}</code> para personalizar con el nombre del contacto.</p>
-            <textarea id="messageText" rows="5" spellcheck="false">Hola {name}, te contactamos desde VOTOMAP WHAT.</textarea>
-            <button class="btn btn-outline" id="btnSaveMessage">Guardar mensaje</button>
-          </section>
-        </div>
-
-        <aside class="workspace-log card">
-          <div class="log-head">
-            <div>
-              <h3>Monitor en vivo</h3>
-              <p>Registro de actividad del sistema</p>
-            </div>
-            <button class="btn btn-ghost btn-sm" id="btnClearLog">Limpiar</button>
+        <section class="block" id="panel-message">
+          <div class="block-top">
+            <h2>Mensaje</h2>
+            <span class="file-tag">{name}</span>
           </div>
-          <div class="log-console" id="logConsole"></div>
-        </aside>
+          <p class="block-text">La variable <code>{name}</code> se reemplaza por el nombre del contacto.</p>
+          <textarea id="messageText" rows="4" spellcheck="false">Hola {name}, le escribimos desde VOTOMAP.</textarea>
+          <button type="button" class="btn btn-line" id="btnSaveMessage">Guardar mensaje</button>
+        </section>
       </div>
 
-      <footer class="page-footer">
-        <strong>VOTOMAP WHAT</strong>
-        <span>·</span>
-        <span>Plataforma de comunicación masiva</span>
-        <span class="footer-tech">Tecnología WAYLABS OS · DRANDIGITAL S.a.s</span>
-      </footer>
+      <aside class="block block-log">
+        <div class="block-top">
+          <h2>Registro</h2>
+          <button type="button" class="btn btn-text btn-sm" id="btnClearLog">Limpiar</button>
+        </div>
+        <div class="log" id="logConsole"></div>
+      </aside>
     </div>
+
+    <footer class="site-footer">
+      <span>VOTOMAP · DRAN DIGITAL S.A.S</span>
+      <span class="footer-note">Uso conforme a la Ley 1581 de 2012 · Solo contactos con autorización</span>
+    </footer>
   </div>
 
   <script src="/js/app.js"></script>

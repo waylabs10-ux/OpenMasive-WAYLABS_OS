@@ -143,7 +143,7 @@ export function startWebServer(): void {
 
   const server = app.listen(WEB_PORT, () => {
     printBanner();
-    log(`Panel VOTOMAP WHAT → http://localhost:${WEB_PORT}`, 'success');
+    log(`Panel VOTOMAP → http://localhost:${WEB_PORT}`, 'success');
     log('Abre esa URL en tu navegador para controlar el envío masivo.', 'info');
   });
 

@@ -64,6 +64,11 @@ function updateUI(status) {
   const textEl = els.sessionBadge.querySelector('.session-text');
   if (textEl) textEl.textContent = label;
 
+  const liveTag = document.getElementById('liveTag');
+  if (liveTag) {
+    liveTag.classList.toggle('hidden', !status.sending);
+  }
+
   els.statContacts.textContent = status.contactCount ?? 0;
   els.statSent.textContent = status.sent ?? 0;
   els.statSkipped.textContent = status.skipped ?? 0;
@@ -211,10 +216,3 @@ loadData().catch((err) => {
 });
 
 connectEvents();
-
-document.querySelectorAll('.nav-item').forEach((link) => {
-  link.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
-    link.classList.add('active');
-  });
-});
