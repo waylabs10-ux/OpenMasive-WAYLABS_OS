@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { logBus } from './logBus';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -14,6 +15,18 @@ export const HEADLESS = process.env.HEADLESS === 'true';
 export const FIREFOX_PATH = process.env.FIREFOX_PATH;
 export const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT ?? '0', 10);
 export const AUTH_TIMEOUT = parseInt(process.env.AUTH_TIMEOUT ?? '0', 10);
+export const REPORTS_DIR = path.resolve(__dirname, '../data/reports');
+export const OPTOUT_FILE = path.resolve(__dirname, '../data/optout.txt');
+export const WEB_PORT = parseInt(process.env.WEB_PORT ?? '3847', 10);
+export const AUTOREPLY_PROMPT_FILE = path.resolve(__dirname, '../data/autoreply-prompt.txt');
+export const AUTOREPLY_CONFIG_FILE = path.resolve(__dirname, '../data/autoreply-config.json');
+
+export const AI_API_KEY = process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY ?? '';
+export const AI_API_URL =
+  process.env.AI_API_URL ?? 'https://api.openai.com/v1/chat/completions';
+export const AI_MODEL = process.env.AI_MODEL ?? 'gpt-4o-mini';
+export const AI_TEMPERATURE = parseFloat(process.env.AI_TEMPERATURE ?? '0.7');
+export const AI_MAX_TOKENS = parseInt(process.env.AI_MAX_TOKENS ?? '500', 10);
 
 const COLORS = {
   green: '\x1b[32m',
@@ -36,6 +49,7 @@ export function log(message: string, type: LogType = 'info'): void {
   const now = new Date();
   const timestamp = now.toLocaleTimeString('es-CO', { hour12: false });
   console.log(`${LOG_COLORS[type]}[${timestamp}] ${message}${COLORS.reset}`);
+  logBus.emitLog(message, type);
 }
 
 export function randomDelay(minMs: number, maxMs: number): Promise<void> {
@@ -46,4 +60,25 @@ export function randomDelay(minMs: number, maxMs: number): Promise<void> {
 export function formatMessage(template: string, name?: string): string {
   const displayName = name?.trim() || 'estimado/a';
   return template.replace(/\{name\}/g, displayName);
+}
+
+export function printBanner(): void {
+  const cyan = COLORS.cyan;
+  const dim = '\x1b[2m';
+  const reset = COLORS.reset;
+  const bold = '\x1b[1m';
+
+  console.log('');
+  console.log(`${cyan}${bold}  ██╗    ██╗ █████╗ ██╗   ██╗██╗      █████╗ ██████╗ ███████╗${reset}`);
+  console.log(`${cyan}${bold}  ██║    ██║██╔══██╗╚██╗ ██╔╝██║     ██╔══██╗██╔══██╗██╔════╝${reset}`);
+  console.log(`${cyan}${bold}  ██║ █╗ ██║███████║ ╚████╔╝ ██║     ███████║██████╔╝███████╗${reset}`);
+  console.log(`${cyan}${bold}  ██║███╗██║██╔══██║  ╚██╔╝  ██║     ██╔══██║██╔══██╗╚════██║${reset}`);
+  console.log(`${cyan}${bold}  ╚███╔███╔╝██║  ██║   ██║   ███████╗██║  ██║██████╔╝███████║${reset}`);
+  console.log(`${cyan}${bold}   ╚══╝╚══╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝${reset}`);
+  console.log(`${cyan}${bold}                        OS${reset}`);
+  console.log('');
+  console.log(`${cyan}  WhatsApp Bulk Sender${reset}  ${dim}· Firefox · Playwright · TypeScript${reset}`);
+  console.log(`${dim}  DRANDIGITAL S.a.s${reset}`);
+  console.log(`${dim}  github.com/waylabs10-ux/whatsapp-bulk-sender${reset}`);
+  console.log('');
 }

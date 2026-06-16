@@ -4,6 +4,7 @@ import {
 } from '@wppconnect/wa-version';
 import { Page } from 'playwright';
 import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
 import path from 'path';
 import {
   AUTH_TIMEOUT,
@@ -14,8 +15,14 @@ import {
 } from './config';
 import { ensurePlaywrightFirefox } from './firefox';
 import { launchFirefox } from './firefoxLauncher';
-import { PAGE_ACTION_TIMEOUT_MS, withTimeout } from './timeouts';
-import { SendResult, WaClient } from './types';
+import { logBus } from './logBus';
+import {
+  MAX_SEND_ATTEMPTS,
+  PAGE_ACTION_TIMEOUT_MS,
+  POST_SEND_COOLDOWN_MS,
+  withTimeout,
+} from './timeouts';
+import { SendResult, WaClient, IncomingMessage, IncomingMessageHandler } from './types';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
 const WA_JS_PATH = require.resolve('@wppconnect/wa-js');
@@ -131,11 +138,296 @@ async function waitForMainReady(page: Page): Promise<void> {
   log('WhatsApp sincronizado. Listo para enviar.', 'success');
 }
 
+async function ensureWppHealthy(page: Page): Promise<void> {
+  const healthy = await page
+    .evaluate(() => {
+      const wpp = (window as unknown as {
+        WPP?: { isReady?: boolean; conn?: { isMainReady?: () => boolean } };
+      }).WPP;
+      return Boolean(wpp?.isReady && wpp.conn?.isMainReady?.());
+    })
+    .catch(() => false);
+
+  if (!healthy) {
+    await ensureWppSession(page);
+  }
+}
+
+async function ensureWppSession(page: Page): Promise<void> {
+  const healthy = await page
+    .evaluate(() => {
+      const wpp = (window as unknown as {
+        WPP?: { isReady?: boolean; conn?: { isMainReady?: () => boolean } };
+      }).WPP;
+      return Boolean(wpp?.isReady && wpp.conn?.isMainReady?.());
+    })
+    .catch(() => false);
+
+  if (healthy) return;
+
+  log('Reconectando librería WPP tras recarga de WhatsApp...', 'info');
+  await waitMs(2000);
+  await injectWaJs(page);
+  await waitForWppReady(page);
+  await waitForMainReady(page);
+}
+
+async function evaluateSend(
+  page: Page,
+  phone: string,
+  message: string
+): Promise<SendResult> {
+  return page.evaluate(
+    async ({ chatId, text }) => {
+      const sleep = (ms: number) =>
+        new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+      type WidLike = string | { _serialized?: string };
+
+      const serializeWid = (wid?: WidLike | null): string => {
+        if (!wid) return '';
+        return typeof wid === 'string' ? wid : wid._serialized ?? '';
+      };
+
+      const wpp = (window as unknown as {
+        WPP: {
+          contact: {
+            queryExists: (id: string) => Promise<{
+              wid?: WidLike;
+              lid?: WidLike;
+              biz?: boolean;
+            } | null>;
+            getPnLidEntry: (id: string) => Promise<{
+              lid?: { _serialized?: string };
+              phoneNumber?: { _serialized?: string };
+              contact?: { isBusiness?: boolean };
+            }>;
+          };
+          chat: {
+            find: (id: string) => Promise<unknown>;
+            sendTextMessage: (
+              id: string,
+              msg: string,
+              options?: {
+                waitForAck?: boolean;
+                linkPreview?: boolean;
+                markIsRead?: boolean;
+                delay?: number;
+              }
+            ) => Promise<{
+              id?: string;
+              ack?: number;
+              to?: string;
+            }>;
+            getMessageById: (id: string) => Promise<{ id?: string; ack?: number }>;
+          };
+        };
+      }).WPP;
+
+      if (!wpp) {
+        throw new Error('WPP no disponible en la página');
+      }
+
+      const resolveTarget = async (): Promise<{
+        candidateIds: string[];
+        isBusiness: boolean;
+      }> => {
+        const candidateIds: string[] = [];
+        let isBusiness = false;
+
+        const addCandidate = (id?: string | null) => {
+          if (!id || candidateIds.includes(id)) return;
+          candidateIds.push(id);
+        };
+
+        const lookup = await Promise.race([
+          wpp.contact.queryExists(chatId).catch(() => null),
+          new Promise<'timeout'>((resolve) =>
+            setTimeout(() => resolve('timeout'), 20_000)
+          ),
+        ]);
+
+        if (lookup !== 'timeout' && lookup) {
+          const resolvedLid = serializeWid(lookup.lid);
+          const resolvedWid = serializeWid(lookup.wid);
+          addCandidate(resolvedLid);
+          addCandidate(resolvedWid);
+          isBusiness = Boolean(lookup.biz);
+        }
+
+        const entry = await Promise.race([
+          wpp.contact.getPnLidEntry(chatId).catch(() => null),
+          new Promise<'timeout'>((resolve) =>
+            setTimeout(() => resolve('timeout'), 15_000)
+          ),
+        ]);
+
+        if (entry !== 'timeout' && entry) {
+          addCandidate(entry.lid?._serialized);
+          addCandidate(entry.phoneNumber?._serialized);
+          isBusiness = isBusiness || Boolean(entry.contact?.isBusiness);
+        }
+
+        addCandidate(chatId);
+
+        const ordered = [
+          ...candidateIds.filter((id) => id.endsWith('@lid')),
+          ...candidateIds.filter((id) => !id.endsWith('@lid')),
+        ];
+
+        for (const id of ordered) {
+          await wpp.chat.find(id).catch(() => null);
+          await sleep(400);
+        }
+
+        return { candidateIds: ordered, isBusiness };
+      };
+
+      const isLidRelatedError = (error: unknown): boolean => {
+        const message = String(
+          error instanceof Error ? error.message : error
+        ).toLowerCase();
+        return (
+          message.includes('lid is missing') ||
+          message.includes('missing in chat table') ||
+          message.includes('no lid for user') ||
+          message.includes('no lid') ||
+          message.includes('account lid not provided') ||
+          message.includes('remote id is not same') ||
+          message.includes('invariant')
+        );
+      };
+
+      const sendWithAck = async (targetId: string) => {
+        const ackTimeout = new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error('WhatsApp no confirmó el envío (sin ACK)')),
+            60_000
+          );
+        });
+
+        return Promise.race([
+          wpp.chat.sendTextMessage(targetId, text, {
+            waitForAck: true,
+            linkPreview: false,
+            markIsRead: false,
+            delay: 1200,
+          }),
+          ackTimeout,
+        ]);
+      };
+
+      const { candidateIds, isBusiness } = await resolveTarget();
+      let activeTargetId = candidateIds[0] ?? chatId;
+
+      await sleep(800);
+
+      let result: {
+        id?: string;
+        ack?: number;
+        to?: string;
+      } | undefined;
+      let lastError: unknown = null;
+
+      for (const targetId of candidateIds) {
+        try {
+          result = await sendWithAck(targetId);
+          activeTargetId = targetId;
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (!isLidRelatedError(err)) {
+            throw err;
+          }
+          await wpp.chat.find(targetId).catch(() => null);
+          await sleep(500);
+        }
+      }
+
+      if (!result) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error('No se pudo enviar: contacto sin LID válido en WhatsApp');
+      }
+
+      if (!result?.id) {
+        throw new Error('WhatsApp no devolvió ID de mensaje');
+      }
+
+      let ack = result.ack ?? 0;
+      if (ack < 1) {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          await sleep(1000);
+          const stored = await wpp.chat.getMessageById(result.id).catch(() => null);
+          ack = stored?.ack ?? result.ack ?? 0;
+          if (ack >= 1) break;
+        }
+      }
+
+      if (ack < 1) {
+        throw new Error(`WhatsApp no confirmó el envío (ack=${ack})`);
+      }
+
+      let storedAck = ack;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const stored = await wpp.chat.getMessageById(result.id).catch(() => null);
+        if (stored?.id) {
+          storedAck = stored.ack ?? ack;
+          return {
+            messageId: result.id,
+            ack: storedAck,
+            to: result.to ?? activeTargetId,
+            isBusiness,
+            resolvedId: activeTargetId,
+          };
+        }
+        await sleep(800);
+      }
+
+      return {
+        messageId: result.id,
+        ack: storedAck,
+        to: result.to ?? activeTargetId,
+        isBusiness,
+        resolvedId: activeTargetId,
+      };
+    },
+    { chatId: phone, text: message }
+  );
+}
+
+function isRecoverableSendError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('execution context was destroyed') ||
+    lower.includes('wpp no disponible') ||
+    lower.includes('wpp is undefined') ||
+    lower.includes("can't access property") ||
+    lower.includes('sin ack') ||
+    lower.includes('no confirmó el envío') ||
+    lower.includes('no devolvió id') ||
+    lower.includes('no apareció en el chat') ||
+    lower.includes('tiempo agotado') ||
+    lower.includes('lid is missing') ||
+    lower.includes('missing in chat table') ||
+    lower.includes('no lid for user') ||
+    lower.includes('no lid') ||
+    lower.includes('account lid not provided')
+  );
+}
+
 async function waitForAuthentication(page: Page): Promise<void> {
-  await page.exposeFunction('qrChanged', (qr: string) => {
+  await page.exposeFunction('qrChanged', async (qr: string) => {
     const code = qr.split(',')[0];
     log('Escanea este QR con WhatsApp → Dispositivos vinculados', 'info');
     qrcode.generate(code, { small: true });
+    try {
+      const dataUrl = await QRCode.toDataURL(code, { margin: 1, width: 280 });
+      logBus.emitQr(dataUrl);
+    } catch {
+      // terminal QR sigue disponible
+    }
   });
 
   const isRegistered = await page.evaluate(() => {
@@ -191,6 +483,78 @@ async function waitForAuthentication(page: Page): Promise<void> {
   }
 }
 
+async function setupIncomingMessageBridge(
+  page: Page,
+  handlers: Set<IncomingMessageHandler>
+): Promise<void> {
+  await page.exposeFunction(
+    'onIncomingMessage',
+    (payload: IncomingMessage) => {
+      for (const handler of handlers) {
+        try {
+          handler(payload);
+        } catch {
+          // ignore handler errors
+        }
+      }
+    }
+  );
+
+  await page.evaluate(() => {
+    const wpp = (window as unknown as {
+      WPP: {
+        on: (event: string, cb: (msg: unknown) => void) => void;
+      };
+      onIncomingMessage: (payload: unknown) => void;
+      __wppIncomingAttached?: boolean;
+    }).WPP;
+
+    if ((window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached) {
+      return;
+    }
+    (window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached = true;
+
+    const serializeWid = (wid?: string | { _serialized?: string } | null): string => {
+      if (!wid) return '';
+      return typeof wid === 'string' ? wid : wid._serialized ?? '';
+    };
+
+    wpp.on('chat.new_message', (raw) => {
+      const msg = raw as {
+        id?: { fromMe?: boolean; _serialized?: string };
+        from?: { _serialized?: string };
+        to?: { _serialized?: string };
+        chatId?: { _serialized?: string };
+        author?: { _serialized?: string };
+        body?: string;
+        notifyName?: string;
+        isGroupMsg?: boolean;
+        type?: string;
+      };
+
+      const chatId =
+        serializeWid(msg.from) ||
+        serializeWid(msg.chatId) ||
+        serializeWid(msg.to);
+
+      if (!chatId) return;
+
+      const body = (msg.body ?? '').trim();
+      const messageType = msg.type ?? 'chat';
+      if (!body && messageType !== 'chat') return;
+
+      (window as unknown as { onIncomingMessage: (payload: unknown) => void }).onIncomingMessage({
+        chatId,
+        body,
+        messageId: msg.id?._serialized,
+        senderName: msg.notifyName,
+        fromMe: Boolean(msg.id?.fromMe),
+        isGroup: Boolean(msg.isGroupMsg) || chatId.endsWith('@g.us'),
+      });
+    });
+  });
+}
+
 export async function createFirefoxClient(): Promise<WaClient> {
   ensurePlaywrightFirefox();
 
@@ -217,6 +581,9 @@ export async function createFirefoxClient(): Promise<WaClient> {
 
   page.setDefaultTimeout(PAGE_ACTION_TIMEOUT_MS);
 
+  const incomingHandlers = new Set<IncomingMessageHandler>();
+  await setupIncomingMessageBridge(page, incomingHandlers);
+
   return {
     async waitUntilReady(): Promise<void> {
       const ready = await page.evaluate(() => {
@@ -231,105 +598,43 @@ export async function createFirefoxClient(): Promise<WaClient> {
     },
 
     async sendText(phone: string, message: string): Promise<SendResult> {
-      return withTimeout(
-        page.evaluate(
-          async ({ chatId, text }) => {
-            const wpp = (window as unknown as {
-              WPP: {
-                contact: {
-                  queryExists: (
-                    id: string
-                  ) => Promise<{ wid?: string | { _serialized?: string } } | null>;
-                };
-                chat: {
-                  find: (id: string) => Promise<{ id?: { _serialized?: string } }>;
-                  openChatBottom: (id: string) => Promise<boolean>;
-                  sendTextMessage: (
-                    id: string,
-                    msg: string,
-                    options?: {
-                      waitForAck?: boolean;
-                      linkPreview?: boolean;
-                      markIsRead?: boolean;
-                      delay?: number;
-                    }
-                  ) => Promise<{
-                    id?: string;
-                    ack?: number;
-                    to?: string;
-                    from?: string;
-                  }>;
-                  getMessageById: (id: string) => Promise<{ id?: string; body?: string; ack?: number }>;
-                };
-              };
-            }).WPP;
+      let lastError: Error | null = null;
 
-            let targetId = chatId;
+      for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+        try {
+          if (attempt > 1) {
+            log(`Reintento ${attempt}/${MAX_SEND_ATTEMPTS} para ${phone}...`, 'info');
+          }
 
-            const lookup = await Promise.race([
-              wpp.contact.queryExists(chatId),
-              new Promise<'timeout'>((resolve) =>
-                setTimeout(() => resolve('timeout'), 6_000)
-              ),
-            ]);
+          await ensureWppHealthy(page);
 
-            if (lookup === 'timeout') {
-              // continuar con el id original
-            } else if (!lookup?.wid) {
-              throw new Error('Número no registrado en WhatsApp');
-            } else {
-              targetId =
-                typeof lookup.wid === 'string'
-                  ? lookup.wid
-                  : lookup.wid._serialized ?? chatId;
-            }
+          const result = await withTimeout(
+            evaluateSend(page, phone, message),
+            PAGE_ACTION_TIMEOUT_MS,
+            `Envío a ${phone}`
+          );
 
-            await wpp.chat.find(targetId);
-            await wpp.chat.openChatBottom(targetId).catch(() => false);
+          await waitMs(POST_SEND_COOLDOWN_MS);
+          return result;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          const errorMessage = lastError.message;
 
-            const ackTimeout = new Promise<never>((_, reject) => {
-              setTimeout(
-                () => reject(new Error('WhatsApp no confirmó el envío (sin ACK)')),
-                50_000
-              );
-            });
+          if (attempt >= MAX_SEND_ATTEMPTS || !isRecoverableSendError(errorMessage)) {
+            throw lastError;
+          }
 
-            const result = await Promise.race([
-              wpp.chat.sendTextMessage(targetId, text, {
-                waitForAck: true,
-                linkPreview: false,
-                markIsRead: false,
-                delay: 1000,
-              }),
-              ackTimeout,
-            ]);
+          log(`Envío interrumpido para ${phone}, reconectando sesión...`, 'info');
+          await waitMs(2000 * attempt);
+          await ensureWppSession(page);
+        }
+      }
 
-            if (!result?.id) {
-              throw new Error('WhatsApp no devolvió ID de mensaje');
-            }
+      throw lastError ?? new Error(`No se pudo enviar a ${phone}`);
+    },
 
-            if ((result.ack ?? 0) < 1) {
-              throw new Error(
-                `WhatsApp no confirmó el envío (ack=${result.ack ?? 0})`
-              );
-            }
-
-            const stored = await wpp.chat.getMessageById(result.id);
-            if (!stored?.id) {
-              throw new Error('El mensaje no apareció en el chat');
-            }
-
-            return {
-              messageId: result.id,
-              ack: result.ack ?? stored.ack ?? 0,
-              to: result.to ?? targetId,
-            };
-          },
-          { chatId: phone, text: message }
-        ),
-        PAGE_ACTION_TIMEOUT_MS,
-        `Envío a ${phone}`
-      );
+    onIncomingMessage(handler: IncomingMessageHandler): void {
+      incomingHandlers.add(handler);
     },
 
     async kill(): Promise<void> {
