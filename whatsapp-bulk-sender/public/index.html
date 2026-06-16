@@ -160,13 +160,19 @@
         <section class="block" id="panel-contacts">
           <div class="block-top">
             <h2>Contactos</h2>
-            <span class="file-tag">CSV</span>
+            <span class="file-tag" id="contactsCountTag">0</span>
           </div>
           <p class="block-text">Números Colombia: <code>3XXXXXXXXX</code> (sin indicativo +57).</p>
-          <textarea id="contactsCsv" rows="7" spellcheck="false">phone,name
-3001234567,Juan Pérez
-3109876543,María García</textarea>
-          <button type="button" class="btn btn-line" id="btnSaveContacts">Guardar contactos</button>
+          <div class="contacts-header">
+            <span>Teléfono</span>
+            <span>Nombre</span>
+            <span></span>
+          </div>
+          <div id="contactsList" class="contacts-list"></div>
+          <div class="btn-row">
+            <button type="button" class="btn btn-line" id="btnAddContact">+ Agregar contacto</button>
+            <button type="button" class="btn btn-blue" id="btnSaveContacts">Guardar contactos</button>
+          </div>
         </section>
 
         <section class="block" id="panel-message">

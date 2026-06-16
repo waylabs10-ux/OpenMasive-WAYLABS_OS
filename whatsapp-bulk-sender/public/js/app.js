@@ -19,7 +19,9 @@ const els = {
   btnSaveOptout: $('btnSaveOptout'),
   campaignName: $('campaignName'),
   campaignList: $('campaignList'),
-  contactsCsv: $('contactsCsv'),
+  contactsList: $('contactsList'),
+  contactsCountTag: $('contactsCountTag'),
+  btnAddContact: $('btnAddContact'),
   messageText: $('messageText'),
   optoutList: $('optoutList'),
   qrBox: $('qrBox'),
@@ -44,6 +46,128 @@ const sessionLabels = {
 };
 
 let wasSending = false;
+
+function displayPhone(phone) {
+  return String(phone)
+    .replace('@c.us', '')
+    .replace('@lid', '')
+    .replace(/^57/, '');
+}
+
+function parseContactsCsv(csv) {
+  const contacts = [];
+  const lines = String(csv || '').trim().split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.startsWith('#')) continue;
+    if (i === 0 && line.toLowerCase().startsWith('phone')) continue;
+
+    const comma = line.indexOf(',');
+    if (comma === -1) {
+      contacts.push({ phone: displayPhone(line), name: '' });
+      continue;
+    }
+
+    let phone = line.slice(0, comma).trim();
+    let name = line.slice(comma + 1).trim();
+    if (name.startsWith('"') && name.endsWith('"')) {
+      name = name.slice(1, -1).replace(/""/g, '"');
+    }
+    contacts.push({ phone: displayPhone(phone), name });
+  }
+
+  return contacts;
+}
+
+function escapeCsvField(value) {
+  const text = String(value ?? '');
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function contactsToCsv(contacts) {
+  const rows = ['phone,name'];
+  for (const contact of contacts) {
+    const phone = displayPhone(contact.phone).trim();
+    const name = String(contact.name ?? '').trim();
+    if (!phone) continue;
+    rows.push(`${phone},${escapeCsvField(name)}`);
+  }
+  return `${rows.join('\n')}\n`;
+}
+
+function collectContactsFromForm() {
+  if (!els.contactsList) return [];
+  return Array.from(els.contactsList.querySelectorAll('.contact-row'))
+    .map((row) => ({
+      phone: row.querySelector('.contact-phone')?.value?.trim() ?? '',
+      name: row.querySelector('.contact-name')?.value?.trim() ?? '',
+    }))
+    .filter((c) => c.phone || c.name);
+}
+
+function updateContactsCount(count) {
+  if (els.contactsCountTag) {
+    els.contactsCountTag.textContent = String(count);
+  }
+}
+
+function createContactRow(contact = { phone: '', name: '' }) {
+  const row = document.createElement('div');
+  row.className = 'contact-row';
+
+  const phoneInput = document.createElement('input');
+  phoneInput.type = 'tel';
+  phoneInput.className = 'field-input contact-phone';
+  phoneInput.placeholder = '3001234567';
+  phoneInput.value = contact.phone ?? '';
+  phoneInput.inputMode = 'numeric';
+  phoneInput.autocomplete = 'off';
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'field-input contact-name';
+  nameInput.placeholder = 'Nombre del contacto';
+  nameInput.value = contact.name ?? '';
+  nameInput.autocomplete = 'off';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn-remove-contact';
+  removeBtn.title = 'Eliminar contacto';
+  removeBtn.setAttribute('aria-label', 'Eliminar contacto');
+  removeBtn.textContent = '×';
+
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    if (!els.contactsList.querySelector('.contact-row')) {
+      renderContacts([{ phone: '', name: '' }]);
+    }
+    updateContactsCount(collectContactsFromForm().filter((c) => c.phone).length);
+  });
+
+  for (const input of [phoneInput, nameInput]) {
+    input.addEventListener('input', () => {
+      updateContactsCount(collectContactsFromForm().filter((c) => c.phone).length);
+    });
+  }
+
+  row.append(phoneInput, nameInput, removeBtn);
+  return row;
+}
+
+function renderContacts(contacts) {
+  if (!els.contactsList) return;
+  els.contactsList.innerHTML = '';
+  const list = contacts.length ? contacts : [{ phone: '', name: '' }];
+  for (const contact of list) {
+    els.contactsList.appendChild(createContactRow(contact));
+  }
+  updateContactsCount(list.filter((c) => c.phone).length);
+}
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -230,7 +354,7 @@ async function loadData() {
     api('/api/status'),
     api('/api/optout'),
   ]);
-  els.contactsCsv.value = contacts.csv;
+  renderContacts(parseContactsCsv(contacts.csv));
   els.messageText.value = message.message;
   if (els.optoutList) {
     els.optoutList.value = optout.content;
@@ -329,12 +453,24 @@ els.btnResetDb.addEventListener('click', async () => {
   updateUI(data.status);
 });
 
+els.btnAddContact?.addEventListener('click', () => {
+  els.contactsList?.appendChild(createContactRow());
+  const phoneInput = els.contactsList?.querySelector('.contact-row:last-child .contact-phone');
+  phoneInput?.focus();
+});
+
 els.btnSaveContacts.addEventListener('click', async () => {
   try {
+    const rows = collectContactsFromForm();
+    const withPhone = rows.filter((c) => c.phone);
+    if (withPhone.length === 0) {
+      throw new Error('Agrega al menos un contacto con número de teléfono.');
+    }
     const data = await api('/api/contacts', {
       method: 'PUT',
-      body: JSON.stringify({ csv: els.contactsCsv.value }),
+      body: JSON.stringify({ csv: contactsToCsv(withPhone) }),
     });
+    renderContacts(parseContactsCsv(contactsToCsv(withPhone)));
     appendLog({
       timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
       message: `Contactos guardados: ${data.count}`,
