@@ -12,15 +12,6 @@ if (!fs.existsSync(dbDir)) {
 const db = new Database(DB_PATH);
 
 db.exec(`
-  CREATE TABLE IF NOT EXISTS sent_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    phone TEXT UNIQUE NOT NULL,
-    name TEXT,
-    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    status TEXT,
-    error_message TEXT
-  );
-
   CREATE TABLE IF NOT EXISTS campaigns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -50,18 +41,66 @@ db.exec(`
   );
 `);
 
+function migrateSentMessagesSchema(): void {
+  const columns = db
+    .prepare('PRAGMA table_info(sent_messages)')
+    .all() as Array<{ name: string }>;
+
+  if (columns.length === 0) {
+    db.exec(`
+      CREATE TABLE sent_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id INTEGER NOT NULL,
+        phone TEXT NOT NULL,
+        name TEXT,
+        sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        status TEXT,
+        error_message TEXT,
+        UNIQUE(campaign_id, phone),
+        FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+      );
+    `);
+    return;
+  }
+
+  const hasCampaignId = columns.some((col) => col.name === 'campaign_id');
+  if (hasCampaignId) return;
+
+  db.exec(`
+    CREATE TABLE sent_messages_v2 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL,
+      phone TEXT NOT NULL,
+      name TEXT,
+      sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      status TEXT,
+      error_message TEXT,
+      UNIQUE(campaign_id, phone)
+    );
+
+    INSERT INTO sent_messages_v2 (campaign_id, phone, name, sent_at, status, error_message)
+    SELECT 0, phone, name, sent_at, status, error_message
+    FROM sent_messages;
+
+    DROP TABLE sent_messages;
+    ALTER TABLE sent_messages_v2 RENAME TO sent_messages;
+  `);
+}
+
+migrateSentMessagesSchema();
+
 if (fs.existsSync(OPTOUT_FILE)) {
   loadOptoutList(fs.readFileSync(OPTOUT_FILE, 'utf-8').split('\n'));
 }
 
-const checkSentStmt = db.prepare(
-  'SELECT 1 FROM sent_messages WHERE phone = ? AND status = ?'
+const checkSentInCampaignStmt = db.prepare(
+  'SELECT 1 FROM sent_messages WHERE campaign_id = ? AND phone = ? AND status = ?'
 );
 
 const insertStmt = db.prepare(`
-  INSERT INTO sent_messages (phone, name, status, error_message)
-  VALUES (?, ?, ?, ?)
-  ON CONFLICT(phone) DO UPDATE SET
+  INSERT INTO sent_messages (campaign_id, phone, name, status, error_message)
+  VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT(campaign_id, phone) DO UPDATE SET
     name = excluded.name,
     status = excluded.status,
     error_message = excluded.error_message,
@@ -77,8 +116,15 @@ const failedCountStmt = db.prepare(
 );
 
 const historyStmt = db.prepare(`
-  SELECT phone, name, status, sent_at, error_message
+  SELECT phone, name, status, sent_at, error_message, campaign_id
   FROM sent_messages
+  ORDER BY sent_at DESC
+`);
+
+const campaignHistoryStmt = db.prepare(`
+  SELECT phone, name, status, sent_at, error_message, campaign_id
+  FROM sent_messages
+  WHERE campaign_id = ?
   ORDER BY sent_at DESC
 `);
 
@@ -127,27 +173,24 @@ const autoReplyLogStmt = db.prepare(`
   LIMIT ?
 `);
 
-export function isAlreadySent(phone: string): boolean {
-  const row = checkSentStmt.get(phone, 'success');
+export function isAlreadySent(campaignId: number, phone: string): boolean {
+  const row = checkSentInCampaignStmt.get(campaignId, phone, 'success');
   return row !== undefined;
 }
 
 export function markAsSent(
+  campaignId: number,
   phone: string,
   name: string,
   status: string,
   error?: string
 ): void {
-  insertStmt.run(phone, name, status, error ?? null);
+  insertStmt.run(campaignId, phone, name, status, error ?? null);
 }
 
 export function getSentCount(): number {
   const row = sentCountStmt.get() as { count: number };
   return row.count;
-}
-
-export function getPendingCount(total: number): number {
-  return total - getSentCount();
 }
 
 export function getFailedCount(): number {
@@ -161,6 +204,7 @@ export function getHistory(): Array<{
   status: string;
   sent_at: string;
   error_message: string | null;
+  campaign_id: number;
 }> {
   return historyStmt.all() as Array<{
     phone: string;
@@ -168,6 +212,25 @@ export function getHistory(): Array<{
     status: string;
     sent_at: string;
     error_message: string | null;
+    campaign_id: number;
+  }>;
+}
+
+export function getCampaignHistory(campaignId: number): Array<{
+  phone: string;
+  name: string | null;
+  status: string;
+  sent_at: string;
+  error_message: string | null;
+  campaign_id: number;
+}> {
+  return campaignHistoryStmt.all(campaignId) as Array<{
+    phone: string;
+    name: string | null;
+    status: string;
+    sent_at: string;
+    error_message: string | null;
+    campaign_id: number;
   }>;
 }
 

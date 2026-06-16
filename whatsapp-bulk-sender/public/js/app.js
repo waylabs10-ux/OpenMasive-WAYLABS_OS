@@ -324,7 +324,7 @@ els.btnStop.addEventListener('click', async () => {
 });
 
 els.btnResetDb.addEventListener('click', async () => {
-  if (!confirm('¿Borrar historial de envíos (sent.db)? Podrás reenviar a todos.')) return;
+  if (!confirm('¿Borrar el historial de TODAS las campañas? Los mismos números podrán volver a recibir mensajes incluso en campañas ya ejecutadas.')) return;
   const data = await api('/api/db/reset', { method: 'POST' });
   updateUI(data.status);
 });

@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-bulk-sender",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "WAYLABS OS — Envío masivo de WhatsApp con Firefox, rate limiting y tracking SQLite",
   "author": "DRANDIGITAL S.a.s",
   "license": "UNLICENSED",

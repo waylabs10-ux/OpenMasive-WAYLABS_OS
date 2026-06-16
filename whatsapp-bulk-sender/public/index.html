@@ -122,13 +122,16 @@
             <h2>Envío</h2>
             <span class="live-tag hidden" id="liveTag">En curso</span>
           </div>
-          <p class="block-text">Nombre la campaña para generar un informe exportable al finalizar (ideal para entregar a clientes).</p>
+          <p class="block-text">
+            Cada envío es una <strong>campaña independiente</strong> con su propio mensaje.
+            El mismo número puede recibir la campaña B aunque ya recibió la A; dentro de una misma campaña no se repite el mensaje.
+          </p>
           <label class="field-label" for="campaignName">Nombre de campaña</label>
           <input type="text" id="campaignName" class="field-input" placeholder="Ej: Alcaldía Cartagena — marzo 2026" />
           <div class="btn-row" style="margin-top: 0.75rem">
             <button type="button" class="btn btn-green" id="btnStart" disabled>Iniciar envío</button>
             <button type="button" class="btn btn-line" id="btnStop" disabled>Detener</button>
-            <button type="button" class="btn btn-text" id="btnResetDb">Limpiar historial</button>
+            <button type="button" class="btn btn-text" id="btnResetDb">Limpiar historial de campañas</button>
           </div>
         </section>
 

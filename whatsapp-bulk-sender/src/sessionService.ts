@@ -186,6 +186,7 @@ export async function startBulkSend(campaignName?: string): Promise<void> {
   try {
     lastSummary = await sendBulkMessages(client, contacts, messageTemplate, {
       abortSignal: sendAbort.signal,
+      campaignId,
     });
     sessionState = 'ready';
 
@@ -258,7 +259,7 @@ export function clearSentHistory(): void {
   resetDatabase();
   lastSummary = { sent: 0, skipped: 0, failed: 0, excluded: 0 };
   emitStatus();
-  log('Historial de envíos borrado (data/sent.db).', 'info');
+  log('Historial de envíos borrado (todas las campañas en sent.db).', 'info');
 }
 
 export function getSendHistory() {

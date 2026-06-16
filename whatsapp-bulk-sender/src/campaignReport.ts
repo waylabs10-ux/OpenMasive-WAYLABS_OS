@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { REPORTS_DIR } from './config';
-import { getHistory } from './tracker';
+import { getCampaignHistory } from './tracker';
 
 export interface CampaignStats {
   name: string;
@@ -43,8 +43,8 @@ function statusLabel(status: string): string {
   return status;
 }
 
-function buildCsvRows(): string {
-  const history = getHistory();
+function buildCsvRows(campaignId: number): string {
+  const history = getCampaignHistory(campaignId);
   const header = 'telefono,nombre,estado,detalle,fecha_hora';
   const rows = history.map((row) => {
     const phone = row.phone.replace('@c.us', '').replace('@lid', '');
@@ -57,8 +57,8 @@ function buildCsvRows(): string {
   return [header, ...rows].join('\n');
 }
 
-function buildHtmlReport(stats: CampaignStats): string {
-  const history = getHistory();
+function buildHtmlReport(stats: CampaignStats, campaignId: number): string {
+  const history = getCampaignHistory(campaignId);
   const now = new Date().toLocaleString('es-CO');
   const effectiveness =
     stats.totalContacts > 0
@@ -132,8 +132,8 @@ export function generateCampaignReport(
   const csvPath = path.join(REPORTS_DIR, `${base}.csv`);
   const htmlPath = path.join(REPORTS_DIR, `${base}.html`);
 
-  fs.writeFileSync(csvPath, buildCsvRows(), 'utf-8');
-  fs.writeFileSync(htmlPath, buildHtmlReport(stats), 'utf-8');
+  fs.writeFileSync(csvPath, buildCsvRows(campaignId), 'utf-8');
+  fs.writeFileSync(htmlPath, buildHtmlReport(stats, campaignId), 'utf-8');
 
   return { id: campaignId, csvPath, htmlPath };
 }

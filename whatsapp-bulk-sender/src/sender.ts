@@ -59,21 +59,28 @@ export async function sendBulkMessages(
   client: WaClient,
   contacts: Contact[],
   messageTemplate: string,
-  options?: { abortSignal?: AbortSignal }
+  options?: { abortSignal?: AbortSignal; campaignId: number }
 ): Promise<BulkSummary> {
+  if (!options?.campaignId) {
+    throw new Error('campaignId es requerido para el envío por campaña');
+  }
+
+  const campaignId = options.campaignId;
   const total = contacts.length;
   const summary: BulkSummary = { sent: 0, skipped: 0, failed: 0, excluded: 0 };
-  const pending = contacts.filter((contact) => !isAlreadySent(contact.phone)).length;
+  const pending = contacts.filter(
+    (contact) => !isAlreadySent(campaignId, contact.phone)
+  ).length;
   const alreadySent = total - pending;
 
-  log(`Iniciando envío masivo a ${total} contactos...`, 'info');
+  log(`Iniciando campaña #${campaignId} → ${total} contactos...`, 'info');
   if (alreadySent > 0) {
     log(
-      `${alreadySent} contacto(s) ya enviados previamente serán omitidos. Borra data/sent.db para reenviar a todos.`,
+      `${alreadySent} contacto(s) ya recibieron el mensaje de esta campaña y serán omitidos.`,
       'skip'
     );
   }
-  log(`${pending} contacto(s) pendientes por enviar.`, 'info');
+  log(`${pending} contacto(s) pendientes por enviar en esta campaña.`, 'info');
   await client.waitUntilReady();
 
   for (let i = 0; i < contacts.length; i++) {
@@ -87,23 +94,23 @@ export async function sendBulkMessages(
 
     if (isOptedOut(phone)) {
       log(`🚫 Excluido ${phone} - lista Habeas Data`, 'skip');
-      markAsSent(phone, name, 'optout_excluded', 'Lista de exclusión Ley 1581');
+      markAsSent(campaignId, phone, name, 'optout_excluded', 'Lista de exclusión Ley 1581');
       summary.excluded++;
       continue;
     }
 
-    if (isAlreadySent(phone)) {
-      log(`⏭️ Saltando ${phone} - ya enviado`, 'skip');
+    if (isAlreadySent(campaignId, phone)) {
+      log(`⏭️ Saltando ${phone} - ya recibió el mensaje de esta campaña`, 'skip');
       summary.skipped++;
       continue;
     }
 
     try {
       const message = formatMessage(messageTemplate, name);
-      log(`📤 Enviando ${index}/${total} → ${phone}`, 'info');
+      log(`📤 [Campaña #${campaignId}] Enviando ${index}/${total} → ${phone}`, 'info');
       const result = await client.sendText(phone, message);
 
-      markAsSent(phone, name, 'success');
+      markAsSent(campaignId, phone, name, 'success');
       summary.sent++;
       log(
         `✅ Enviado ${index}/${total} - ${phone} (ack=${result.ack}, id=${result.messageId})`,
@@ -122,7 +129,7 @@ export async function sendBulkMessages(
         ? 'not_on_whatsapp'
         : errorMessage;
 
-      markAsSent(phone, name, 'failed', status);
+      markAsSent(campaignId, phone, name, 'failed', status);
       log(`❌ Error con ${phone}: ${errorMessage}`, 'error');
       summary.failed++;
     }
