@@ -6,8 +6,20 @@ export interface SendResult {
   resolvedId?: string;
 }
 
+export interface IncomingMessage {
+  chatId: string;
+  body: string;
+  messageId?: string;
+  senderName?: string;
+  fromMe: boolean;
+  isGroup: boolean;
+}
+
+export type IncomingMessageHandler = (message: IncomingMessage) => void;
+
 export interface WaClient {
   waitUntilReady(): Promise<void>;
   sendText(phone: string, message: string): Promise<SendResult>;
+  onIncomingMessage(handler: IncomingMessageHandler): void;
   kill(): Promise<void>;
 }

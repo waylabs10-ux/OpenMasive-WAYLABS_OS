@@ -11,6 +11,17 @@ import { generateCampaignReport } from './campaignReport';
 import { getOptoutCount, readOptoutRaw } from './optout';
 import { sendBulkMessages } from './sender';
 import {
+  attachIncomingListener,
+  bindAutoReplyContext,
+  getAutoReplyConfig,
+  getAutoReplyStatus,
+  getRecentAutoReplies,
+  readAutoReplyPrompt,
+  resetAutoReplyListener,
+  saveAutoReplyConfig,
+  saveAutoReplyPrompt,
+} from './autoReplyService';
+import {
   closeDatabase,
   finishCampaign,
   getFailedCount,
@@ -40,6 +51,9 @@ export interface AppStatus {
   excluded: number;
   optoutCount: number;
   contactCount: number;
+  autoReplyEnabled: boolean;
+  autoReplyProcessing: boolean;
+  aiConfigured: boolean;
   lastError?: string;
 }
 
@@ -50,7 +64,12 @@ let sendAbort: AbortController | null = null;
 let lastSummary = { sent: 0, skipped: 0, failed: 0, excluded: 0 };
 let lastError: string | undefined;
 
-function emitStatus(): void {
+bindAutoReplyContext({
+  getClient: () => client,
+  isBulkSending: () => sending,
+});
+
+function buildAppStatus(): AppStatus {
   let contactCount = 0;
   try {
     if (fs.existsSync(CONTACTS_CSV)) {
@@ -60,39 +79,7 @@ function emitStatus(): void {
     contactCount = 0;
   }
 
-  const status: AppStatus = {
-    session: sessionState,
-    sending,
-    sent: sending ? lastSummary.sent : getSentCount(),
-    skipped: sending ? lastSummary.skipped : 0,
-    failed: sending ? lastSummary.failed : getFailedCount(),
-    excluded: sending ? lastSummary.excluded : 0,
-    optoutCount: getOptoutCount(),
-    contactCount,
-    lastError,
-  };
-
-  logBus.emitStatus({
-    session: status.session,
-    sending: status.sending,
-    sent: status.sent,
-    skipped: status.skipped,
-    failed: status.failed,
-    excluded: status.excluded,
-    optoutCount: status.optoutCount,
-    contactCount: status.contactCount,
-  });
-}
-
-export function getStatus(): AppStatus {
-  let contactCount = 0;
-  try {
-    if (fs.existsSync(CONTACTS_CSV)) {
-      contactCount = loadContacts().length;
-    }
-  } catch {
-    contactCount = 0;
-  }
+  const autoReply = getAutoReplyStatus();
 
   return {
     session: sessionState,
@@ -103,8 +90,32 @@ export function getStatus(): AppStatus {
     excluded: sending ? lastSummary.excluded : 0,
     optoutCount: getOptoutCount(),
     contactCount,
+    autoReplyEnabled: autoReply.enabled,
+    autoReplyProcessing: autoReply.processing,
+    aiConfigured: autoReply.aiConfigured,
     lastError,
   };
+}
+
+function emitStatus(): void {
+  const status = buildAppStatus();
+
+  logBus.emitStatus({
+    session: status.session,
+    sending: status.sending,
+    sent: status.sent,
+    skipped: status.skipped,
+    failed: status.failed,
+    excluded: status.excluded,
+    optoutCount: status.optoutCount,
+    contactCount: status.contactCount,
+    autoReplyEnabled: status.autoReplyEnabled,
+    autoReplyProcessing: status.autoReplyProcessing,
+  });
+}
+
+export function getStatus(): AppStatus {
+  return buildAppStatus();
 }
 
 export async function connectWhatsApp(): Promise<void> {
@@ -119,8 +130,12 @@ export async function connectWhatsApp(): Promise<void> {
   try {
     log('Conectando WhatsApp Web en Firefox...', 'info');
     client = await createFirefoxClient();
+    attachIncomingListener(client);
     sessionState = 'ready';
     log('WhatsApp listo para enviar desde el panel web.', 'success');
+    if (getAutoReplyConfig().enabled) {
+      log('Bot de respuestas IA activo (escuchando mensajes entrantes).', 'info');
+    }
     emitStatus();
   } catch (err) {
     sessionState = 'error';
@@ -233,6 +248,7 @@ export async function disconnectWhatsApp(): Promise<void> {
     client = null;
   }
 
+  resetAutoReplyListener();
   sessionState = 'idle';
   emitStatus();
   log('Sesión de WhatsApp cerrada.', 'info');
@@ -266,6 +282,37 @@ export function saveOptoutContent(content: string): number {
   log(`${count} número(s) en lista de exclusión Habeas Data.`, 'info');
   emitStatus();
   return count;
+}
+
+export function getAutoReplySettings() {
+  return getAutoReplyConfig();
+}
+
+export function updateAutoReplySettings(
+  partial: Parameters<typeof saveAutoReplyConfig>[0]
+) {
+  const config = saveAutoReplyConfig(partial);
+  if (config.enabled && client && sessionState === 'ready') {
+    attachIncomingListener(client);
+    log('Bot de respuestas IA activado.', 'success');
+  } else if (!config.enabled) {
+    log('Bot de respuestas IA desactivado.', 'info');
+  }
+  emitStatus();
+  return config;
+}
+
+export function getAutoReplyPromptContent(): string {
+  return readAutoReplyPrompt();
+}
+
+export function saveAutoReplyPromptContent(content: string): void {
+  saveAutoReplyPrompt(content);
+  log('Prompt del bot IA guardado.', 'success');
+}
+
+export function getAutoReplyHistory(limit = 50) {
+  return getRecentAutoReplies(limit);
 }
 
 export async function shutdownApp(): Promise<void> {

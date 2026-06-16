@@ -276,6 +276,89 @@ code {
   color: var(--blue);
 }
 
+.file-tag--ok {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.file-tag--warn {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.875rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+@media (max-width: 639px) {
+  .field-grid { grid-template-columns: 1fr; }
+}
+
+.autoreply-history {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.autoreply-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg);
+  font-size: 0.8125rem;
+}
+
+.autoreply-item.ok { border-left: 3px solid var(--green); }
+.autoreply-item.bad { border-left: 3px solid var(--red); }
+
+.autoreply-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.autoreply-item-head strong {
+  color: var(--ink);
+  font-size: 0.8125rem;
+}
+
+.autoreply-in,
+.autoreply-out {
+  margin-bottom: 0.2rem;
+  word-break: break-word;
+}
+
+.autoreply-in span,
+.autoreply-out span {
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
 .live-tag {
   font-size: 0.6875rem;
   font-weight: 700;

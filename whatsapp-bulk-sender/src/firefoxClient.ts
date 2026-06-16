@@ -22,7 +22,7 @@ import {
   POST_SEND_COOLDOWN_MS,
   withTimeout,
 } from './timeouts';
-import { SendResult, WaClient } from './types';
+import { SendResult, WaClient, IncomingMessage, IncomingMessageHandler } from './types';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
 const WA_JS_PATH = require.resolve('@wppconnect/wa-js');
@@ -483,6 +483,78 @@ async function waitForAuthentication(page: Page): Promise<void> {
   }
 }
 
+async function setupIncomingMessageBridge(
+  page: Page,
+  handlers: Set<IncomingMessageHandler>
+): Promise<void> {
+  await page.exposeFunction(
+    'onIncomingMessage',
+    (payload: IncomingMessage) => {
+      for (const handler of handlers) {
+        try {
+          handler(payload);
+        } catch {
+          // ignore handler errors
+        }
+      }
+    }
+  );
+
+  await page.evaluate(() => {
+    const wpp = (window as unknown as {
+      WPP: {
+        on: (event: string, cb: (msg: unknown) => void) => void;
+      };
+      onIncomingMessage: (payload: unknown) => void;
+      __wppIncomingAttached?: boolean;
+    }).WPP;
+
+    if ((window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached) {
+      return;
+    }
+    (window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached = true;
+
+    const serializeWid = (wid?: string | { _serialized?: string } | null): string => {
+      if (!wid) return '';
+      return typeof wid === 'string' ? wid : wid._serialized ?? '';
+    };
+
+    wpp.on('chat.new_message', (raw) => {
+      const msg = raw as {
+        id?: { fromMe?: boolean; _serialized?: string };
+        from?: { _serialized?: string };
+        to?: { _serialized?: string };
+        chatId?: { _serialized?: string };
+        author?: { _serialized?: string };
+        body?: string;
+        notifyName?: string;
+        isGroupMsg?: boolean;
+        type?: string;
+      };
+
+      const chatId =
+        serializeWid(msg.from) ||
+        serializeWid(msg.chatId) ||
+        serializeWid(msg.to);
+
+      if (!chatId) return;
+
+      const body = (msg.body ?? '').trim();
+      const messageType = msg.type ?? 'chat';
+      if (!body && messageType !== 'chat') return;
+
+      (window as unknown as { onIncomingMessage: (payload: unknown) => void }).onIncomingMessage({
+        chatId,
+        body,
+        messageId: msg.id?._serialized,
+        senderName: msg.notifyName,
+        fromMe: Boolean(msg.id?.fromMe),
+        isGroup: Boolean(msg.isGroupMsg) || chatId.endsWith('@g.us'),
+      });
+    });
+  });
+}
+
 export async function createFirefoxClient(): Promise<WaClient> {
   ensurePlaywrightFirefox();
 
@@ -508,6 +580,9 @@ export async function createFirefoxClient(): Promise<WaClient> {
   log('Sesión de WhatsApp autenticada en Firefox.', 'success');
 
   page.setDefaultTimeout(PAGE_ACTION_TIMEOUT_MS);
+
+  const incomingHandlers = new Set<IncomingMessageHandler>();
+  await setupIncomingMessageBridge(page, incomingHandlers);
 
   return {
     async waitUntilReady(): Promise<void> {
@@ -556,6 +631,10 @@ export async function createFirefoxClient(): Promise<WaClient> {
       }
 
       throw lastError ?? new Error(`No se pudo enviar a ${phone}`);
+    },
+
+    onIncomingMessage(handler: IncomingMessageHandler): void {
+      incomingHandlers.add(handler);
     },
 
     async kill(): Promise<void> {
