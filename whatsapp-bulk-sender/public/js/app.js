@@ -58,8 +58,11 @@ function escapeHtml(text) {
 
 function updateUI(status) {
   const session = status.session || 'idle';
-  els.sessionBadge.textContent = sessionLabels[session] || session;
-  els.sessionBadge.className = `session-badge ${session}`;
+  const label = sessionLabels[session] || session;
+
+  els.sessionBadge.className = `session-pill ${session}`;
+  const textEl = els.sessionBadge.querySelector('.session-text');
+  if (textEl) textEl.textContent = label;
 
   els.statContacts.textContent = status.contactCount ?? 0;
   els.statSent.textContent = status.sent ?? 0;
@@ -208,3 +211,10 @@ loadData().catch((err) => {
 });
 
 connectEvents();
+
+document.querySelectorAll('.nav-item').forEach((link) => {
+  link.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
+    link.classList.add('active');
+  });
+});
