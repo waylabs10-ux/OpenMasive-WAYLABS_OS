@@ -23,9 +23,12 @@ import {
   withTimeout,
 } from './timeouts';
 import { SendResult, WaClient, IncomingMessage, IncomingMessageHandler } from './types';
+import { registerAutoReplyHandler } from './autoReplyService';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
 const WA_JS_PATH = require.resolve('@wppconnect/wa-js');
+
+let reattachIncomingBridge: (() => Promise<void>) | null = null;
 
 function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -170,6 +173,10 @@ async function ensureWppSession(page: Page): Promise<void> {
   await injectWaJs(page);
   await waitForWppReady(page);
   await waitForMainReady(page);
+  if (reattachIncomingBridge) {
+    await reattachIncomingBridge();
+    log('Listener de mensajes entrantes reactivado.', 'info');
+  }
 }
 
 async function evaluateSend(
@@ -485,7 +492,8 @@ async function waitForAuthentication(page: Page): Promise<void> {
 
 async function setupIncomingMessageBridge(
   page: Page,
-  handlers: Set<IncomingMessageHandler>
+  handlers: Set<IncomingMessageHandler>,
+  force = false
 ): Promise<void> {
   await page.exposeFunction(
     'onIncomingMessage',
@@ -498,33 +506,55 @@ async function setupIncomingMessageBridge(
         }
       }
     }
-  );
+  ).catch(() => {
+    // ya expuesto en sesión anterior
+  });
 
-  await page.evaluate(() => {
-    const wpp = (window as unknown as {
-      WPP: {
-        on: (event: string, cb: (msg: unknown) => void) => void;
+  await page.evaluate((shouldForce) => {
+    if (shouldForce) {
+      (window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached = false;
+    }
+
+    const wppRoot = (window as unknown as {
+      WPP?: {
+        on?: (event: string, cb: (msg: unknown) => void) => void;
+        chat?: { on?: (event: string, cb: (msg: unknown) => void) => void };
       };
       onIncomingMessage: (payload: unknown) => void;
       __wppIncomingAttached?: boolean;
+      __wppSeenIncoming?: Set<string>;
     }).WPP;
 
+    if (!wppRoot) return;
     if ((window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached) {
       return;
     }
     (window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached = true;
+
+    const seen = new Set<string>();
+    (window as unknown as { __wppSeenIncoming?: Set<string> }).__wppSeenIncoming = seen;
 
     const serializeWid = (wid?: string | { _serialized?: string } | null): string => {
       if (!wid) return '';
       return typeof wid === 'string' ? wid : wid._serialized ?? '';
     };
 
-    wpp.on('chat.new_message', (raw) => {
+    const SKIP_TYPES = new Set([
+      'e2e_notification',
+      'notification_template',
+      'protocol',
+      'gp2',
+      'call_log',
+      'revoked',
+    ]);
+
+    const handleRaw = (raw: unknown) => {
       const msg = raw as {
         id?: { fromMe?: boolean; _serialized?: string };
         from?: { _serialized?: string };
         to?: { _serialized?: string };
-        chatId?: { _serialized?: string };
+        chatId?: { _serialized?: string } | string;
+        chat?: { id?: { _serialized?: string } };
         author?: { _serialized?: string };
         body?: string;
         notifyName?: string;
@@ -532,27 +562,61 @@ async function setupIncomingMessageBridge(
         type?: string;
       };
 
-      const chatId =
-        serializeWid(msg.from) ||
-        serializeWid(msg.chatId) ||
-        serializeWid(msg.to);
+      if (msg.id?.fromMe) return;
 
-      if (!chatId) return;
+      const messageType = msg.type ?? 'chat';
+      if (SKIP_TYPES.has(messageType)) return;
 
       const body = (msg.body ?? '').trim();
-      const messageType = msg.type ?? 'chat';
-      if (!body && messageType !== 'chat') return;
+      if (!body) return;
+
+      const isGroup = Boolean(msg.isGroupMsg);
+      let chatId = '';
+
+      if (isGroup) {
+        chatId =
+          serializeWid(msg.chatId) ||
+          serializeWid(msg.chat?.id) ||
+          serializeWid(msg.from);
+      } else {
+        chatId =
+          serializeWid(msg.from) ||
+          serializeWid(msg.chatId) ||
+          serializeWid(msg.chat?.id) ||
+          serializeWid(msg.to);
+      }
+
+      if (!chatId || chatId.includes('@broadcast') || chatId.includes('@newsletter')) {
+        return;
+      }
+
+      const messageId = msg.id?._serialized;
+      if (messageId) {
+        if (seen.has(messageId)) return;
+        seen.add(messageId);
+        if (seen.size > 3000) {
+          const first = seen.values().next().value;
+          if (first) seen.delete(first);
+        }
+      }
 
       (window as unknown as { onIncomingMessage: (payload: unknown) => void }).onIncomingMessage({
         chatId,
         body,
-        messageId: msg.id?._serialized,
+        messageId,
         senderName: msg.notifyName,
-        fromMe: Boolean(msg.id?.fromMe),
-        isGroup: Boolean(msg.isGroupMsg) || chatId.endsWith('@g.us'),
+        fromMe: false,
+        isGroup,
       });
-    });
-  });
+    };
+
+    if (wppRoot.on) {
+      wppRoot.on('chat.new_message', handleRaw);
+    }
+    if (wppRoot.chat?.on) {
+      wppRoot.chat.on('chat.new_message', handleRaw);
+    }
+  }, force);
 }
 
 export async function createFirefoxClient(): Promise<WaClient> {
@@ -582,6 +646,10 @@ export async function createFirefoxClient(): Promise<WaClient> {
   page.setDefaultTimeout(PAGE_ACTION_TIMEOUT_MS);
 
   const incomingHandlers = new Set<IncomingMessageHandler>();
+  registerAutoReplyHandler(incomingHandlers);
+  reattachIncomingBridge = async () => {
+    await setupIncomingMessageBridge(page, incomingHandlers, true);
+  };
   await setupIncomingMessageBridge(page, incomingHandlers);
 
   return {

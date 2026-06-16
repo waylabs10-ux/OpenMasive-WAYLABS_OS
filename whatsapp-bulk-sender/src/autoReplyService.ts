@@ -4,6 +4,8 @@ import { generateAiReply, isAiConfigured } from './aiService';
 import {
   AUTOREPLY_CONFIG_FILE,
   AUTOREPLY_PROMPT_FILE,
+  AI_API_URL,
+  AI_MODEL,
   log,
 } from './config';
 import { logBus } from './logBus';
@@ -13,7 +15,7 @@ import {
   insertAutoReplyLog,
   wasMessageHandled,
 } from './tracker';
-import { IncomingMessage, WaClient } from './types';
+import { IncomingMessage, IncomingMessageHandler, WaClient } from './types';
 
 export interface AutoReplyConfig {
   enabled: boolean;
@@ -25,7 +27,7 @@ export interface AutoReplyConfig {
 const DEFAULT_CONFIG: AutoReplyConfig = {
   enabled: false,
   replyInGroups: false,
-  cooldownSeconds: 20,
+  cooldownSeconds: 15,
   maxHistoryMessages: 8,
 };
 
@@ -38,7 +40,7 @@ Si alguien pide no ser contactado o dejar de recibir mensajes, confirma amableme
 No uses markdown ni listas numeradas; escribe como un mensaje natural de WhatsApp.`;
 
 let config: AutoReplyConfig = { ...DEFAULT_CONFIG };
-let listenerAttached = false;
+let handlerRegistered = false;
 let processing = false;
 const chatHistory = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>();
 const lastReplyAt = new Map<string, number>();
@@ -88,6 +90,9 @@ export function saveAutoReplyConfig(partial: Partial<AutoReplyConfig>): AutoRepl
   ensureDataDir();
   fs.writeFileSync(AUTOREPLY_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
   logBus.emitAutoReplyStatus(getAutoReplyStatus());
+  if (config.enabled) {
+    log('Bot IA activado desde el panel.', 'success');
+  }
   return { ...config };
 }
 
@@ -108,8 +113,24 @@ export function getAutoReplyStatus() {
     enabled: config.enabled,
     aiConfigured: isAiConfigured(),
     processing,
-    replyCount: getAutoReplyLog(1).length > 0 ? getAutoReplyLog(100).length : 0,
+    replyCount: getAutoReplyLog(50).length,
   };
+}
+
+export function logAutoReplyStartupHints(): void {
+  if (!isAiConfigured()) {
+    log(
+      'Bot IA: sin API key. Agrega AI_API_KEY en .env (Groq: gsk_...) y reinicia npm run web',
+      'error'
+    );
+    return;
+  }
+  log(`Bot IA: API configurada (${AI_MODEL} · ${AI_API_URL})`, 'info');
+  if (!config.enabled) {
+    log('Bot IA: desactivado. Márcalo en el panel y pulsa "Guardar bot IA".', 'skip');
+  } else {
+    log('Bot IA: activo y escuchando mensajes entrantes.', 'success');
+  }
 }
 
 function phoneFromChatId(chatId: string): string {
@@ -131,16 +152,45 @@ function pushHistory(
   chatHistory.set(chatId, history);
 }
 
+function skipReply(reason: string): void {
+  log(`Bot IA omitido: ${reason}`, 'skip');
+}
+
 async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
-  if (!config.enabled) return;
-  if (!isAiConfigured()) return;
-  if (isBulkSending?.()) return;
-  if (!msg.body?.trim()) return;
-  if (msg.fromMe) return;
-  if (msg.isGroup && !config.replyInGroups) return;
+  const displayPhone = phoneFromChatId(msg.chatId);
+  const preview = msg.body?.slice(0, 60) || '(sin texto)';
+
+  log(`📩 Mensaje entrante de ${displayPhone}: ${preview}`, 'info');
+
+  if (!config.enabled) {
+    skipReply('bot desactivado en el panel');
+    return;
+  }
+  if (!isAiConfigured()) {
+    skipReply('falta AI_API_KEY en .env (reinicia npm run web después de guardar)');
+    return;
+  }
+  if (isBulkSending?.()) {
+    skipReply('hay un envío masivo en curso');
+    return;
+  }
+  if (!msg.body?.trim()) {
+    skipReply('mensaje sin texto (solo responde texto)');
+    return;
+  }
+  if (msg.fromMe) {
+    return;
+  }
+  if (msg.isGroup && !config.replyInGroups) {
+    skipReply('mensaje de grupo (activa "Responder en grupos" si lo necesitas)');
+    return;
+  }
 
   const client = getClient?.();
-  if (!client) return;
+  if (!client) {
+    skipReply('WhatsApp no conectado');
+    return;
+  }
 
   if (msg.messageId) {
     if (seenMessageIds.has(msg.messageId)) return;
@@ -152,24 +202,26 @@ async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
     }
   }
 
-  const phoneKey = phoneFromChatId(msg.chatId);
-  if (isOptedOut(`${phoneKey}@c.us`) || isOptedOut(msg.chatId)) {
-    log(`Auto-reply omitido: ${phoneKey} en lista Habeas Data`, 'skip');
+  if (isOptedOut(`${displayPhone}@c.us`) || isOptedOut(msg.chatId)) {
+    skipReply(`${displayPhone} está en lista Habeas Data`);
     return;
   }
 
   const now = Date.now();
   const lastAt = lastReplyAt.get(msg.chatId) ?? 0;
-  if (now - lastAt < config.cooldownSeconds * 1000) {
+  const cooldownMs = config.cooldownSeconds * 1000;
+  if (now - lastAt < cooldownMs) {
+    skipReply(`espera ${config.cooldownSeconds}s entre respuestas al mismo chat`);
     return;
   }
 
-  if (processing) return;
+  if (processing) {
+    skipReply('ya hay otra respuesta en proceso');
+    return;
+  }
+
   processing = true;
   logBus.emitAutoReplyStatus(getAutoReplyStatus());
-
-  const displayPhone = phoneKey;
-  log(`💬 Mensaje entrante de ${displayPhone}: ${msg.body.slice(0, 80)}`, 'info');
 
   try {
     const systemPrompt = readAutoReplyPrompt();
@@ -177,6 +229,8 @@ async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
     const senderContext = msg.senderName
       ? `\n\nEl contacto se llama ${msg.senderName}.`
       : '';
+    log(`🤖 Generando respuesta IA para ${displayPhone}...`, 'info');
+
     const aiResult = await generateAiReply(
       systemPrompt + senderContext,
       history,
@@ -197,7 +251,7 @@ async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
       model: aiResult.model,
     });
 
-    log(`🤖 Respuesta IA enviada a ${displayPhone}`, 'success');
+    log(`✅ Respuesta IA enviada a ${displayPhone}`, 'success');
     logBus.emitAutoReply({
       phone: displayPhone,
       incoming: msg.body,
@@ -206,7 +260,7 @@ async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
     });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    log(`Error auto-reply a ${displayPhone}: ${errorMessage}`, 'error');
+    log(`❌ Error bot IA → ${displayPhone}: ${errorMessage}`, 'error');
     insertAutoReplyLog({
       chatId: msg.chatId,
       phone: displayPhone,
@@ -223,16 +277,25 @@ async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
   }
 }
 
+const autoReplyHandler: IncomingMessageHandler = (msg) => {
+  void handleIncomingMessage(msg);
+};
+
+export function registerAutoReplyHandler(
+  handlers: Set<IncomingMessageHandler>
+): void {
+  handlers.add(autoReplyHandler);
+  handlerRegistered = true;
+}
+
 export function attachIncomingListener(client: WaClient): void {
-  if (listenerAttached) return;
-  client.onIncomingMessage((msg) => {
-    void handleIncomingMessage(msg);
-  });
-  listenerAttached = true;
+  if (handlerRegistered) return;
+  client.onIncomingMessage(autoReplyHandler);
+  handlerRegistered = true;
 }
 
 export function resetAutoReplyListener(): void {
-  listenerAttached = false;
+  handlerRegistered = false;
   processing = false;
   chatHistory.clear();
   lastReplyAt.clear();

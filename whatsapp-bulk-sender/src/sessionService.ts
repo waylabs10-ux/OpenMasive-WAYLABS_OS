@@ -16,6 +16,7 @@ import {
   getAutoReplyConfig,
   getAutoReplyStatus,
   getRecentAutoReplies,
+  logAutoReplyStartupHints,
   readAutoReplyPrompt,
   resetAutoReplyListener,
   saveAutoReplyConfig,
@@ -133,9 +134,7 @@ export async function connectWhatsApp(): Promise<void> {
     attachIncomingListener(client);
     sessionState = 'ready';
     log('WhatsApp listo para enviar desde el panel web.', 'success');
-    if (getAutoReplyConfig().enabled) {
-      log('Bot de respuestas IA activo (escuchando mensajes entrantes).', 'info');
-    }
+    logAutoReplyStartupHints();
     emitStatus();
   } catch (err) {
     sessionState = 'error';

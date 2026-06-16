@@ -22,9 +22,14 @@ export const AUTOREPLY_PROMPT_FILE = path.resolve(__dirname, '../data/autoreply-
 export const AUTOREPLY_CONFIG_FILE = path.resolve(__dirname, '../data/autoreply-config.json');
 
 export const AI_API_KEY = process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY ?? '';
+const isGroqKey = AI_API_KEY.startsWith('gsk_');
 export const AI_API_URL =
-  process.env.AI_API_URL ?? 'https://api.openai.com/v1/chat/completions';
-export const AI_MODEL = process.env.AI_MODEL ?? 'gpt-4o-mini';
+  process.env.AI_API_URL ??
+  (isGroqKey
+    ? 'https://api.groq.com/openai/v1/chat/completions'
+    : 'https://api.openai.com/v1/chat/completions');
+export const AI_MODEL =
+  process.env.AI_MODEL ?? (isGroqKey ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini');
 export const AI_TEMPERATURE = parseFloat(process.env.AI_TEMPERATURE ?? '0.7');
 export const AI_MAX_TOKENS = parseInt(process.env.AI_MAX_TOKENS ?? '500', 10);
 
