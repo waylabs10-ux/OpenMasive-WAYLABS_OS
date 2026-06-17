@@ -12,6 +12,7 @@ import {
   QR_TIMEOUT,
   SESSION_DATA_PATH,
   SESSION_NAME,
+  WA_SESSION_READY_TIMEOUT_MS,
 } from './config';
 import { ensurePlaywrightFirefox } from './firefox';
 import { launchFirefox } from './firefoxLauncher';
@@ -22,13 +23,31 @@ import {
   POST_SEND_COOLDOWN_MS,
   withTimeout,
 } from './timeouts';
-import { SendResult, WaClient, IncomingMessage, IncomingMessageHandler } from './types';
-import { registerAutoReplyHandler } from './autoReplyService';
+import { SendResult, WaClient } from './types';
 
 const WHATSAPP_URL = 'https://web.whatsapp.com/';
 const WA_JS_PATH = require.resolve('@wppconnect/wa-js');
 
-let reattachIncomingBridge: (() => Promise<void>) | null = null;
+function evaluateSessionReady(): boolean {
+  const wpp = (window as unknown as {
+    WPP?: {
+      isReady?: boolean;
+      conn?: {
+        isMainLoaded?: () => boolean;
+        isOnline?: () => boolean;
+        isAuthenticated?: () => boolean;
+      };
+    };
+  }).WPP;
+
+  if (!wpp?.isReady) return false;
+
+  return (
+    wpp.conn?.isMainLoaded?.() === true ||
+    wpp.conn?.isOnline?.() === true ||
+    wpp.conn?.isAuthenticated?.() === true
+  );
+}
 
 function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -114,42 +133,60 @@ async function waitForWppReady(page: Page): Promise<void> {
   log('WhatsApp Web cargado correctamente.', 'success');
 }
 
-async function waitForMainReady(page: Page): Promise<void> {
-  log('Sincronizando WhatsApp (espera que carguen tus chats)...', 'info');
+async function waitForSessionReady(page: Page): Promise<void> {
+  log('Preparando sesión de WhatsApp...', 'info');
 
   const startedAt = Date.now();
   const heartbeat = setInterval(() => {
     const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-    log(`Sincronizando... (${elapsed}s)`, 'info');
-  }, 15_000);
+    log(`Conectando... (${elapsed}s)`, 'info');
+  }, 10_000);
 
   try {
-    await page.waitForFunction(
-      () => {
-        const wpp = (window as unknown as {
-          WPP?: { conn?: { isMainReady?: () => boolean } };
-        }).WPP;
-        return wpp?.conn?.isMainReady?.() === true;
-      },
-      null,
-      { timeout: 300_000 }
-    );
+    await page.waitForFunction(evaluateSessionReady, null, {
+      timeout: WA_SESSION_READY_TIMEOUT_MS,
+    });
   } finally {
     clearInterval(heartbeat);
   }
 
-  log('WhatsApp sincronizado. Listo para enviar.', 'success');
+  const syncNote = await page.evaluate(() => {
+    const wpp = (window as unknown as {
+      WPP?: {
+        conn?: {
+          isMainReady?: () => boolean;
+          getHistorySyncProgress?: () => {
+            inProgress?: boolean;
+            progress?: number | null;
+          };
+        };
+      };
+    }).WPP;
+
+    if (wpp?.conn?.isMainReady?.()) {
+      return null;
+    }
+
+    const progress = wpp?.conn?.getHistorySyncProgress?.();
+    if (progress?.inProgress) {
+      const pct =
+        progress.progress !== null && progress.progress !== undefined
+          ? ` (${progress.progress}%)`
+          : '';
+      return `historial de chats sincronizando en segundo plano${pct}`;
+    }
+
+    return 'interfaz lista; historial completo puede seguir cargando';
+  });
+
+  log('WhatsApp listo para enviar.', 'success');
+  if (syncNote) {
+    log(`${syncNote}. El envío masivo ya está disponible.`, 'info');
+  }
 }
 
 async function ensureWppHealthy(page: Page): Promise<void> {
-  const healthy = await page
-    .evaluate(() => {
-      const wpp = (window as unknown as {
-        WPP?: { isReady?: boolean; conn?: { isMainReady?: () => boolean } };
-      }).WPP;
-      return Boolean(wpp?.isReady && wpp.conn?.isMainReady?.());
-    })
-    .catch(() => false);
+  const healthy = await page.evaluate(evaluateSessionReady).catch(() => false);
 
   if (!healthy) {
     await ensureWppSession(page);
@@ -157,14 +194,7 @@ async function ensureWppHealthy(page: Page): Promise<void> {
 }
 
 async function ensureWppSession(page: Page): Promise<void> {
-  const healthy = await page
-    .evaluate(() => {
-      const wpp = (window as unknown as {
-        WPP?: { isReady?: boolean; conn?: { isMainReady?: () => boolean } };
-      }).WPP;
-      return Boolean(wpp?.isReady && wpp.conn?.isMainReady?.());
-    })
-    .catch(() => false);
+  const healthy = await page.evaluate(evaluateSessionReady).catch(() => false);
 
   if (healthy) return;
 
@@ -172,11 +202,7 @@ async function ensureWppSession(page: Page): Promise<void> {
   await waitMs(2000);
   await injectWaJs(page);
   await waitForWppReady(page);
-  await waitForMainReady(page);
-  if (reattachIncomingBridge) {
-    await reattachIncomingBridge();
-    log('Listener de mensajes entrantes reactivado.', 'info');
-  }
+  await waitForSessionReady(page);
 }
 
 async function evaluateSend(
@@ -490,135 +516,6 @@ async function waitForAuthentication(page: Page): Promise<void> {
   }
 }
 
-async function setupIncomingMessageBridge(
-  page: Page,
-  handlers: Set<IncomingMessageHandler>,
-  force = false
-): Promise<void> {
-  await page.exposeFunction(
-    'onIncomingMessage',
-    (payload: IncomingMessage) => {
-      for (const handler of handlers) {
-        try {
-          handler(payload);
-        } catch {
-          // ignore handler errors
-        }
-      }
-    }
-  ).catch(() => {
-    // ya expuesto en sesión anterior
-  });
-
-  await page.evaluate((shouldForce) => {
-    if (shouldForce) {
-      (window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached = false;
-    }
-
-    const wppRoot = (window as unknown as {
-      WPP?: {
-        on?: (event: string, cb: (msg: unknown) => void) => void;
-        chat?: { on?: (event: string, cb: (msg: unknown) => void) => void };
-      };
-      onIncomingMessage: (payload: unknown) => void;
-      __wppIncomingAttached?: boolean;
-      __wppSeenIncoming?: Set<string>;
-    }).WPP;
-
-    if (!wppRoot) return;
-    if ((window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached) {
-      return;
-    }
-    (window as unknown as { __wppIncomingAttached?: boolean }).__wppIncomingAttached = true;
-
-    const seen = new Set<string>();
-    (window as unknown as { __wppSeenIncoming?: Set<string> }).__wppSeenIncoming = seen;
-
-    const serializeWid = (wid?: string | { _serialized?: string } | null): string => {
-      if (!wid) return '';
-      return typeof wid === 'string' ? wid : wid._serialized ?? '';
-    };
-
-    const SKIP_TYPES = new Set([
-      'e2e_notification',
-      'notification_template',
-      'protocol',
-      'gp2',
-      'call_log',
-      'revoked',
-    ]);
-
-    const handleRaw = (raw: unknown) => {
-      const msg = raw as {
-        id?: { fromMe?: boolean; _serialized?: string };
-        from?: { _serialized?: string };
-        to?: { _serialized?: string };
-        chatId?: { _serialized?: string } | string;
-        chat?: { id?: { _serialized?: string } };
-        author?: { _serialized?: string };
-        body?: string;
-        notifyName?: string;
-        isGroupMsg?: boolean;
-        type?: string;
-      };
-
-      if (msg.id?.fromMe) return;
-
-      const messageType = msg.type ?? 'chat';
-      if (SKIP_TYPES.has(messageType)) return;
-
-      const body = (msg.body ?? '').trim();
-      if (!body) return;
-
-      const isGroup = Boolean(msg.isGroupMsg);
-      let chatId = '';
-
-      if (isGroup) {
-        chatId =
-          serializeWid(msg.chatId) ||
-          serializeWid(msg.chat?.id) ||
-          serializeWid(msg.from);
-      } else {
-        chatId =
-          serializeWid(msg.from) ||
-          serializeWid(msg.chatId) ||
-          serializeWid(msg.chat?.id) ||
-          serializeWid(msg.to);
-      }
-
-      if (!chatId || chatId.includes('@broadcast') || chatId.includes('@newsletter')) {
-        return;
-      }
-
-      const messageId = msg.id?._serialized;
-      if (messageId) {
-        if (seen.has(messageId)) return;
-        seen.add(messageId);
-        if (seen.size > 3000) {
-          const first = seen.values().next().value;
-          if (first) seen.delete(first);
-        }
-      }
-
-      (window as unknown as { onIncomingMessage: (payload: unknown) => void }).onIncomingMessage({
-        chatId,
-        body,
-        messageId,
-        senderName: msg.notifyName,
-        fromMe: false,
-        isGroup,
-      });
-    };
-
-    if (wppRoot.on) {
-      wppRoot.on('chat.new_message', handleRaw);
-    }
-    if (wppRoot.chat?.on) {
-      wppRoot.chat.on('chat.new_message', handleRaw);
-    }
-  }, force);
-}
-
 export async function createFirefoxClient(): Promise<WaClient> {
   ensurePlaywrightFirefox();
 
@@ -639,29 +536,18 @@ export async function createFirefoxClient(): Promise<WaClient> {
   await injectWaJs(page);
   await waitForWppReady(page);
   await waitForAuthentication(page);
-  await waitForMainReady(page);
+  await waitForSessionReady(page);
 
   log('Sesión de WhatsApp autenticada en Firefox.', 'success');
 
   page.setDefaultTimeout(PAGE_ACTION_TIMEOUT_MS);
 
-  const incomingHandlers = new Set<IncomingMessageHandler>();
-  registerAutoReplyHandler(incomingHandlers);
-  reattachIncomingBridge = async () => {
-    await setupIncomingMessageBridge(page, incomingHandlers, true);
-  };
-  await setupIncomingMessageBridge(page, incomingHandlers);
-
   return {
     async waitUntilReady(): Promise<void> {
-      const ready = await page.evaluate(() => {
-        return (window as unknown as {
-          WPP?: { conn?: { isMainReady?: () => boolean } };
-        }).WPP?.conn?.isMainReady?.();
-      });
+      const ready = await page.evaluate(evaluateSessionReady);
 
       if (!ready) {
-        await waitForMainReady(page);
+        await waitForSessionReady(page);
       }
     },
 
@@ -699,10 +585,6 @@ export async function createFirefoxClient(): Promise<WaClient> {
       }
 
       throw lastError ?? new Error(`No se pudo enviar a ${phone}`);
-    },
-
-    onIncomingMessage(handler: IncomingMessageHandler): void {
-      incomingHandlers.add(handler);
     },
 
     async kill(): Promise<void> {

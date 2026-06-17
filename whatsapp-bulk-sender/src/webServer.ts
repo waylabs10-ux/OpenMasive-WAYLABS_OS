@@ -14,22 +14,16 @@ import {
   clearSentHistory,
   connectWhatsApp,
   disconnectWhatsApp,
-  getAutoReplyHistory,
-  getAutoReplyPromptContent,
-  getAutoReplySettings,
   getCampaignById,
   getCampaignsList,
   getOptoutContent,
   getSendHistory,
   getStatus,
-  saveAutoReplyPromptContent,
   saveOptoutContent,
   shutdownApp,
   startBulkSend,
   stopBulkSend,
-  updateAutoReplySettings,
 } from './sessionService';
-import { getAutoReplyStatus } from './autoReplyService';
 
 export function startWebServer(): void {
   const app = express();
@@ -57,16 +51,10 @@ export function startWebServer(): void {
     const onLog = (payload: unknown) => send('log', payload);
     const onQr = (payload: unknown) => send('qr', payload);
     const onStatus = (payload: unknown) => send('status', payload);
-    const onAutoReply = (payload: unknown) => send('autoreply', payload);
-    const onAutoReplyStatus = (payload: unknown) => send('autoreply_status', payload);
 
     logBus.on('log', onLog);
     logBus.on('qr', onQr);
     logBus.on('status', onStatus);
-    logBus.on('autoreply', onAutoReply);
-    logBus.on('autoreply_status', onAutoReplyStatus);
-
-    send('autoreply_status', getAutoReplyStatus());
 
     const heartbeat = setInterval(() => {
       res.write(': ping\n\n');
@@ -77,8 +65,6 @@ export function startWebServer(): void {
       logBus.off('log', onLog);
       logBus.off('qr', onQr);
       logBus.off('status', onStatus);
-      logBus.off('autoreply', onAutoReply);
-      logBus.off('autoreply_status', onAutoReplyStatus);
     });
   });
 
@@ -186,46 +172,6 @@ export function startWebServer(): void {
       return;
     }
     res.sendFile(path.resolve(campaign.report_html));
-  });
-
-  app.get('/api/autoreply', (_req, res) => {
-    res.json({
-      config: getAutoReplySettings(),
-      prompt: getAutoReplyPromptContent(),
-      history: getAutoReplyHistory(30),
-    });
-  });
-
-  app.put('/api/autoreply/config', (req, res) => {
-    const body = req.body ?? {};
-    const config = updateAutoReplySettings({
-      enabled: body.enabled !== undefined ? Boolean(body.enabled) : undefined,
-      replyInGroups:
-        body.replyInGroups !== undefined ? Boolean(body.replyInGroups) : undefined,
-      cooldownSeconds:
-        body.cooldownSeconds !== undefined
-          ? Math.max(5, Number(body.cooldownSeconds) || 20)
-          : undefined,
-      maxHistoryMessages:
-        body.maxHistoryMessages !== undefined
-          ? Math.min(20, Math.max(2, Number(body.maxHistoryMessages) || 8))
-          : undefined,
-    });
-    res.json({ ok: true, config, status: getStatus() });
-  });
-
-  app.put('/api/autoreply/prompt', (req, res) => {
-    const prompt = String(req.body?.prompt ?? '');
-    if (!prompt.trim()) {
-      res.status(400).json({ ok: false, error: 'El prompt no puede estar vacío' });
-      return;
-    }
-    saveAutoReplyPromptContent(prompt);
-    res.json({ ok: true, prompt: getAutoReplyPromptContent() });
-  });
-
-  app.get('/api/autoreply/history', (_req, res) => {
-    res.json({ history: getAutoReplyHistory(50) });
   });
 
   app.get('*', (_req, res) => {

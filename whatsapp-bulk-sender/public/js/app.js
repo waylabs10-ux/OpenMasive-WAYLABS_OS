@@ -27,14 +27,6 @@ const els = {
   qrBox: $('qrBox'),
   qrImage: $('qrImage'),
   logConsole: $('logConsole'),
-  aiStatusTag: $('aiStatusTag'),
-  autoReplyEnabled: $('autoReplyEnabled'),
-  autoReplyGroups: $('autoReplyGroups'),
-  autoReplyCooldown: $('autoReplyCooldown'),
-  autoReplyHistoryCount: $('autoReplyHistoryCount'),
-  autoReplyPrompt: $('autoReplyPrompt'),
-  autoReplyHistoryList: $('autoReplyHistoryList'),
-  btnSaveAutoReply: $('btnSaveAutoReply'),
 };
 
 const sessionLabels = {
@@ -245,61 +237,6 @@ async function loadCampaigns() {
   renderCampaigns(data.campaigns || []);
 }
 
-function renderAutoReplyHistory(items) {
-  if (!els.autoReplyHistoryList) return;
-  if (!items?.length) {
-    els.autoReplyHistoryList.innerHTML =
-      '<p class="empty-note">Sin conversaciones respondidas aún.</p>';
-    return;
-  }
-
-  els.autoReplyHistoryList.innerHTML = items
-    .map((item) => {
-      const ok = Boolean(item.reply);
-      return `
-        <article class="autoreply-item ${ok ? 'ok' : 'bad'}">
-          <div class="autoreply-item-head">
-            <strong>${escapeHtml(item.phone || item.chat_id || '—')}</strong>
-            <span>${formatDate(item.created_at)}</span>
-          </div>
-          <p class="autoreply-in"><span>Entrada:</span> ${escapeHtml(item.incoming)}</p>
-          <p class="autoreply-out"><span>Respuesta:</span> ${escapeHtml(item.reply || item.error || '—')}</p>
-        </article>
-      `;
-    })
-    .join('');
-}
-
-function updateAiStatusTag(config) {
-  if (!els.aiStatusTag) return;
-  if (!config?.aiConfigured) {
-    els.aiStatusTag.textContent = 'Sin API key';
-    els.aiStatusTag.className = 'file-tag file-tag--warn';
-    return;
-  }
-  if (config.enabled) {
-    els.aiStatusTag.textContent = 'Activo';
-    els.aiStatusTag.className = 'file-tag file-tag--ok';
-    return;
-  }
-  els.aiStatusTag.textContent = 'Inactivo';
-  els.aiStatusTag.className = 'file-tag';
-}
-
-async function loadAutoReply() {
-  const data = await api('/api/autoreply');
-  const { config, prompt, history } = data;
-  if (els.autoReplyEnabled) els.autoReplyEnabled.checked = Boolean(config.enabled);
-  if (els.autoReplyGroups) els.autoReplyGroups.checked = Boolean(config.replyInGroups);
-  if (els.autoReplyCooldown) els.autoReplyCooldown.value = config.cooldownSeconds ?? 20;
-  if (els.autoReplyHistoryCount) {
-    els.autoReplyHistoryCount.value = config.maxHistoryMessages ?? 8;
-  }
-  if (els.autoReplyPrompt) els.autoReplyPrompt.value = prompt || '';
-  updateAiStatusTag(config);
-  renderAutoReplyHistory(history || []);
-}
-
 function updateUI(status) {
   const session = status.session || 'idle';
   const label = sessionLabels[session] || session;
@@ -338,13 +275,6 @@ function updateUI(status) {
     loadCampaigns().catch(() => null);
   }
   wasSending = sending;
-
-  if (status.aiConfigured !== undefined) {
-    updateAiStatusTag({
-      aiConfigured: status.aiConfigured,
-      enabled: status.autoReplyEnabled,
-    });
-  }
 }
 
 async function loadData() {
@@ -360,7 +290,7 @@ async function loadData() {
     els.optoutList.value = optout.content;
   }
   updateUI(status);
-  await Promise.all([loadCampaigns(), loadAutoReply()]);
+  await loadCampaigns();
 }
 
 function connectEvents() {
@@ -378,22 +308,6 @@ function connectEvents() {
 
   source.addEventListener('status', (e) => {
     updateUI(JSON.parse(e.data));
-  });
-
-  source.addEventListener('autoreply', (e) => {
-    const entry = JSON.parse(e.data);
-    appendLog({
-      timestamp: entry.timestamp,
-      message: `IA → ${entry.phone}: ${entry.reply.slice(0, 120)}`,
-      type: 'success',
-    });
-    api('/api/autoreply/history')
-      .then((data) => renderAutoReplyHistory(data.history || []))
-      .catch(() => null);
-  });
-
-  source.addEventListener('autoreply_status', (e) => {
-    updateAiStatusTag(JSON.parse(e.data));
   });
 
   source.onerror = () => {
@@ -527,39 +441,6 @@ els.btnRefreshCampaigns?.addEventListener('click', async () => {
       timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
       message: 'Lista de campañas actualizada.',
       type: 'info',
-    });
-  } catch (err) {
-    appendLog({
-      timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
-      message: err.message,
-      type: 'error',
-    });
-  }
-});
-
-els.btnSaveAutoReply?.addEventListener('click', async () => {
-  try {
-    await api('/api/autoreply/prompt', {
-      method: 'PUT',
-      body: JSON.stringify({ prompt: els.autoReplyPrompt.value }),
-    });
-    const data = await api('/api/autoreply/config', {
-      method: 'PUT',
-      body: JSON.stringify({
-        enabled: els.autoReplyEnabled.checked,
-        replyInGroups: els.autoReplyGroups.checked,
-        cooldownSeconds: Number(els.autoReplyCooldown.value) || 20,
-        maxHistoryMessages: Number(els.autoReplyHistoryCount.value) || 8,
-      }),
-    });
-    updateAiStatusTag(data.config);
-    updateUI(data.status);
-    appendLog({
-      timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
-      message: data.config.enabled
-        ? 'Bot IA guardado y activado.'
-        : 'Configuración del bot IA guardada.',
-      type: 'success',
     });
   } catch (err) {
     appendLog({

@@ -20,23 +20,6 @@ export interface StatusEvent {
   excluded?: number;
   optoutCount?: number;
   contactCount: number;
-  autoReplyEnabled?: boolean;
-  autoReplyProcessing?: boolean;
-}
-
-export interface AutoReplyEvent {
-  phone: string;
-  incoming: string;
-  reply: string;
-  senderName?: string;
-  timestamp: string;
-}
-
-export interface AutoReplyStatusEvent {
-  enabled: boolean;
-  aiConfigured: boolean;
-  processing: boolean;
-  replyCount: number;
 }
 
 class LogBus extends EventEmitter {
@@ -56,18 +39,6 @@ class LogBus extends EventEmitter {
 
   emitStatus(status: StatusEvent): void {
     this.emit('status', status);
-  }
-
-  emitAutoReply(event: Omit<AutoReplyEvent, 'timestamp'>): void {
-    const payload: AutoReplyEvent = {
-      ...event,
-      timestamp: new Date().toLocaleTimeString('es-CO', { hour12: false }),
-    };
-    this.emit('autoreply', payload);
-  }
-
-  emitAutoReplyStatus(status: AutoReplyStatusEvent): void {
-    this.emit('autoreply_status', status);
   }
 }
 

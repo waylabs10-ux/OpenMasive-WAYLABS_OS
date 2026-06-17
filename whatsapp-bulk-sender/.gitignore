@@ -4,5 +4,4 @@ sessions/
 data/sent.db
 data/reports/
 data/optout.txt
-data/autoreply-config.json
 .env

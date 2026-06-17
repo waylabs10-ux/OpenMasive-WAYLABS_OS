@@ -26,19 +26,6 @@ db.exec(`
     report_csv TEXT,
     report_html TEXT
   );
-
-  CREATE TABLE IF NOT EXISTS auto_reply_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_id TEXT NOT NULL,
-    phone TEXT,
-    sender_name TEXT,
-    incoming TEXT NOT NULL,
-    reply TEXT,
-    message_id TEXT UNIQUE,
-    model TEXT,
-    error TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
 `);
 
 function migrateSentMessagesSchema(): void {
@@ -155,22 +142,6 @@ const listCampaignsStmt = db.prepare(`
 const getCampaignStmt = db.prepare(`
   SELECT id, name, started_at, finished_at, total_contacts, sent, skipped, failed, excluded, message_preview, report_csv, report_html
   FROM campaigns WHERE id = ?
-`);
-
-const insertAutoReplyStmt = db.prepare(`
-  INSERT INTO auto_reply_log (chat_id, phone, sender_name, incoming, reply, message_id, model, error)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-`);
-
-const checkHandledStmt = db.prepare(
-  'SELECT 1 FROM auto_reply_log WHERE message_id = ? LIMIT 1'
-);
-
-const autoReplyLogStmt = db.prepare(`
-  SELECT id, chat_id, phone, sender_name, incoming, reply, message_id, model, error, created_at
-  FROM auto_reply_log
-  ORDER BY id DESC
-  LIMIT ?
 `);
 
 export function isAlreadySent(campaignId: number, phone: string): boolean {
@@ -319,64 +290,6 @@ export function persistOptoutList(content: string): number {
   fs.mkdirSync(path.dirname(OPTOUT_FILE), { recursive: true });
   fs.writeFileSync(OPTOUT_FILE, content, 'utf-8');
   return count;
-}
-
-export function wasMessageHandled(messageId: string): boolean {
-  if (!messageId) return false;
-  const row = checkHandledStmt.get(messageId);
-  return row !== undefined;
-}
-
-export function insertAutoReplyLog(entry: {
-  chatId: string;
-  phone: string;
-  senderName?: string;
-  incoming: string;
-  reply: string;
-  messageId?: string;
-  model: string;
-  error?: string;
-}): void {
-  try {
-    insertAutoReplyStmt.run(
-      entry.chatId,
-      entry.phone,
-      entry.senderName ?? null,
-      entry.incoming,
-      entry.reply || null,
-      entry.messageId ?? null,
-      entry.model || null,
-      entry.error ?? null
-    );
-  } catch {
-    // duplicate message_id or DB error — ignore
-  }
-}
-
-export function getAutoReplyLog(limit = 50): Array<{
-  id: number;
-  chat_id: string;
-  phone: string | null;
-  sender_name: string | null;
-  incoming: string;
-  reply: string | null;
-  message_id: string | null;
-  model: string | null;
-  error: string | null;
-  created_at: string;
-}> {
-  return autoReplyLogStmt.all(limit) as Array<{
-    id: number;
-    chat_id: string;
-    phone: string | null;
-    sender_name: string | null;
-    incoming: string;
-    reply: string | null;
-    message_id: string | null;
-    model: string | null;
-    error: string | null;
-    created_at: string;
-  }>;
 }
 
 export function closeDatabase(): void {

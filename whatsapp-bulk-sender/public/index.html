@@ -78,45 +78,6 @@
           </div>
         </section>
 
-        <section class="block" id="panel-autoreply">
-          <div class="block-top">
-            <h2>Bot respuestas IA</h2>
-            <span class="file-tag" id="aiStatusTag">IA</span>
-          </div>
-          <p class="block-text">
-            Responde automáticamente mensajes entrantes usando una API compatible con OpenAI.
-            Personalice el comportamiento editando el <strong>prompt del sistema</strong> abajo.
-          </p>
-          <div class="toggle-row">
-            <label class="toggle-label">
-              <input type="checkbox" id="autoReplyEnabled" />
-              Activar bot de respuestas
-            </label>
-            <label class="toggle-label">
-              <input type="checkbox" id="autoReplyGroups" />
-              Responder en grupos
-            </label>
-          </div>
-          <div class="field-grid">
-            <div>
-              <label class="field-label" for="autoReplyCooldown">Espera entre respuestas (seg)</label>
-              <input type="number" id="autoReplyCooldown" class="field-input" min="5" max="300" value="20" />
-            </div>
-            <div>
-              <label class="field-label" for="autoReplyHistoryCount">Mensajes de contexto</label>
-              <input type="number" id="autoReplyHistoryCount" class="field-input" min="2" max="20" value="8" />
-            </div>
-          </div>
-          <label class="field-label" for="autoReplyPrompt">Prompt del sistema (personalizable)</label>
-          <textarea id="autoReplyPrompt" rows="8" spellcheck="false" placeholder="Instrucciones para la IA..."></textarea>
-          <div class="btn-row">
-            <button type="button" class="btn btn-blue" id="btnSaveAutoReply">Guardar bot IA</button>
-          </div>
-          <div id="autoReplyHistoryList" class="autoreply-history">
-            <p class="empty-note">Sin conversaciones respondidas aún.</p>
-          </div>
-        </section>
-
         <section class="block" id="panel-send">
           <div class="block-top">
             <h2>Envío</h2>
