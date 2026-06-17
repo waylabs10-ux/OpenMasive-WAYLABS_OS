@@ -134,7 +134,7 @@ npm start
 2. En la terminal aparece un **código QR**.
 3. En tu teléfono: **WhatsApp → Dispositivos vinculados → Vincular dispositivo**.
 4. Escanea el QR.
-5. Espera el mensaje: `WhatsApp sincronizado. Listo para enviar.`
+5. Espera el mensaje: `WhatsApp listo para enviar.`
 
 La sesión queda guardada en `sessions/`. La próxima vez no pedirá QR (salvo que borres esa carpeta).
 
@@ -143,7 +143,7 @@ La sesión queda guardada en `sessions/`. La próxima vez no pedirá QR (salvo q
 ## Qué verás cuando funciona
 
 ```
-[19:15:17] WhatsApp sincronizado. Listo para enviar.
+[19:15:17] WhatsApp listo para enviar.
 [19:15:17] 3 contactos cargados desde CSV
 [19:15:17] Iniciando envío masivo a 3 contactos...
 [19:15:17] 📤 Enviando 1/3 → 57xxxxxxxxx@c.us
@@ -171,6 +171,7 @@ HEADLESS=false         # false = ver Firefox (recomendado)
 QR_TIMEOUT=0           # 0 = esperar QR sin límite
 AUTH_TIMEOUT=0
 WEB_PORT=3847          # Puerto del panel web
+WA_SESSION_READY_TIMEOUT_MS=90000  # Máx. espera conexión (ms); no bloquea sync de historial
 ```
 
 | Variable | Qué hace |
@@ -178,6 +179,7 @@ WEB_PORT=3847          # Puerto del panel web
 | `DELAY_MIN_MS` / `DELAY_MAX_MS` | Pausa aleatoria entre contactos. **No los bajes mucho** o WhatsApp puede limitarte. |
 | `HEADLESS=false` | Muestra la ventana de Firefox. Usa `true` solo cuando ya tengas sesión guardada y sepas lo que haces. |
 | `SESSION_NAME` | Nombre de la carpeta de sesión dentro de `sessions/`. |
+| `WA_SESSION_READY_TIMEOUT_MS` | Tiempo máximo esperando que la sesión esté lista para enviar (default 90s). **No** espera la sincronización completa del historial de chats. |
 
 ---
 
@@ -204,6 +206,18 @@ Si solo quieres reintentar los fallidos, **no borres** `sent.db`. Los fallidos s
 npm run setup
 # o
 npx playwright install firefox
+```
+
+### Tarda mucho en "Conectando…" o "Sincronizando chats"
+
+Antes el sistema esperaba `isMainReady()` de wa-js, que bloquea hasta que WhatsApp descargue **todo** el historial de chats (puede tardar varios minutos).
+
+Ahora solo espera que la interfaz esté lista (`isMainLoaded` / `isOnline` / `isAuthenticated`). El historial puede seguir sincronizando en segundo plano, pero **ya puedes enviar**.
+
+Si aún tarda más de ~90s, aumenta en `.env`:
+
+```env
+WA_SESSION_READY_TIMEOUT_MS=120000
 ```
 
 ### No aparece el QR / se queda colgado
