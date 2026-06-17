@@ -2,6 +2,8 @@ export interface SendResult {
   messageId: string;
   ack: number;
   to?: string;
+  isBusiness?: boolean;
+  resolvedId?: string;
 }
 
 export interface WaClient {

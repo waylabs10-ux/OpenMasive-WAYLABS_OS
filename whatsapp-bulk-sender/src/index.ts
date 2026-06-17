@@ -3,12 +3,13 @@ import {
   CONTACTS_CSV,
   log,
   MESSAGE_FILE,
+  printBanner,
 } from './config';
 import { assertFirefoxOnly } from './firefox';
 import { createFirefoxClient } from './firefoxClient';
 import { loadContacts } from './csvLoader';
 import { sendBulkMessages } from './sender';
-import { closeDatabase } from './tracker';
+import { closeDatabase, startCampaign } from './tracker';
 import { WaClient } from './types';
 
 let client: WaClient | null = null;
@@ -35,8 +36,9 @@ async function shutdown(): Promise<void> {
 
 async function main(): Promise<void> {
   assertFirefoxOnly();
+  printBanner();
 
-  log('Iniciando WhatsApp Bulk Sender (solo Firefox)...', 'info');
+  log('Iniciando motor de envío (solo Firefox)...', 'info');
   log(`Contactos: ${CONTACTS_CSV}`, 'info');
   log('Chrome y Chromium están bloqueados en este sistema.', 'info');
 
@@ -56,7 +58,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  await sendBulkMessages(client, contacts, messageTemplate);
+  const campaignId = startCampaign(
+    `CLI ${new Date().toLocaleDateString('es-CO')}`,
+    contacts.length,
+    messageTemplate.slice(0, 200)
+  );
+
+  await sendBulkMessages(client, contacts, messageTemplate, { campaignId });
 
   log('Proceso completado.', 'success');
   await shutdown();

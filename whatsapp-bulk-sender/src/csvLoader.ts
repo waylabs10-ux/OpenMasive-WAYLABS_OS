@@ -7,7 +7,7 @@ export interface Contact {
   name: string;
 }
 
-function normalizePhone(raw: string): string | null {
+export function normalizePhone(raw: string): string | null {
   let digits = raw.replace(/[\s\-()]/g, '');
 
   if (digits.startsWith('0')) {
@@ -42,6 +42,7 @@ export function loadContacts(): Contact[] {
   }
 
   const contacts: Contact[] = [];
+  const seenPhones = new Set<string>();
 
   for (const row of parsed.data) {
     const rawPhone = row.phone?.trim();
@@ -53,6 +54,12 @@ export function loadContacts(): Contact[] {
       continue;
     }
 
+    if (seenPhones.has(phone)) {
+      log(`Contacto duplicado omitido: ${rawPhone}`, 'skip');
+      continue;
+    }
+    seenPhones.add(phone);
+
     contacts.push({
       phone,
       name: row.name?.trim() ?? '',
@@ -61,4 +68,16 @@ export function loadContacts(): Contact[] {
 
   log(`${contacts.length} contactos cargados desde CSV`, 'info');
   return contacts;
+}
+
+export function readContactsCsvRaw(): string {
+  if (!fs.existsSync(CONTACTS_CSV)) {
+    return 'phone,name\n';
+  }
+  return fs.readFileSync(CONTACTS_CSV, 'utf-8');
+}
+
+export function saveContactsCsv(content: string): number {
+  fs.writeFileSync(CONTACTS_CSV, content, 'utf-8');
+  return loadContacts().length;
 }
